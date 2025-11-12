@@ -1,3 +1,4 @@
+- **Note:** `type_code` values are stored uppercase automatically
 # Complete API Reference
 
 This document contains all API endpoints, request payloads, and response examples for the StorageUp Backend.
@@ -18,6 +19,7 @@ This document contains all API endpoints, request payloads, and response example
     "Content-Type": "application/json"
   }
   ```
+  - **unit_status options:** `vacant`, `rented`, `reserved`, `company`, `repair`, `to clean`, `locked`, `on site`, `Unavailable`
 - **Request Body:**
   ```json
   {
@@ -1082,6 +1084,373 @@ This document contains all API endpoints, request payloads, and response example
 
 ---
 
+### 24. Create Unit (Admin)
+**Create a new storage unit**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/admin/units`
+- **Description:** Adds a storage unit record to the system. Admin access required.
+- **Headers:**
+  ```json
+  {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer <adminToken>"
+  }
+  ```
+  OR send `adminToken` cookie with the request (`credentials: 'include'`).
+- **Request Body:** Example payload
+  ```json
+  {
+    "unit_number": "A001",
+    "location": "DT-001",
+    "location_two": "Secondary Warehouse",
+    "description": "Climate controlled 10x10 unit",
+    "unit_details": {
+      "unit_number": "A001",
+      "unit_type": "Climate Controlled",
+      "unit_size": "10x10",
+      "door_size": "8ft roll-up",
+        "unit_status": "vacant",
+      "walk_order": "1",
+      "building_location": "Building A"
+    },
+    "dimensions": {
+      "length": "10ft",
+      "width": "10ft",
+      "area_size": "100 SQFT",
+      "height": "9ft"
+    },
+    "unit_is": "vacant",
+    "monthly_rate": 9000,
+    "other_information": {
+      "creation_date": "2024-01-01",
+      "end_date": "",
+      "last_su_sync": "2024-02-01"
+    },
+    "maintenance_comments": "Freshly painted and cleaned."
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Unit created successfully",
+    "data": {
+      "_id": "64f96f3f5c1d2b7f8c654321",
+      "unit_number": "A001",
+      "location": "DT-001",
+      "unit_is": "vacant",
+      "monthly_rate": 9000,
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 25. Get Units (Admin)
+**Get paginated list of storage units (Admin only)**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/units`
+- **Description:** Returns paginated list of units. Admin access required.
+- **Query Parameters:** `page`, `limit`
+- **Headers:** `Authorization: Bearer <adminToken>` or `adminToken` cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "count": 10,
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 5,
+      "totalItems": 45,
+      "limit": 10,
+      "hasNextPage": true,
+      "hasPrevPage": false,
+      "nextPage": 2,
+      "prevPage": null
+    },
+    "data": [
+      {
+        "_id": "64f96f3f5c1d2b7f8c654321",
+        "unit_number": "A001",
+        "location": "DT-001",
+        "unit_is": "vacant",
+        "monthly_rate": 9000,
+        "createdAt": "2024-01-01T00:00:00.000Z",
+        "updatedAt": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 26. Get Unit by ID (Admin)
+**Get unit details (Admin only)**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/units/:id`
+- **Description:** Returns a unit by ID. Admin access required.
+- **Headers:** `Authorization: Bearer <adminToken>` or `adminToken` cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "64f96f3f5c1d2b7f8c654321",
+      "unit_number": "A001",
+      "location": "DT-001",
+      "location_two": "Secondary Warehouse",
+      "description": "Climate controlled 10x10 unit",
+      "unit_details": {
+        "unit_type": "Climate Controlled",
+        "unit_size": "10x10",
+        "door_size": "8ft roll-up",
+        "unit_status": "vacant",
+        "walk_order": "1",
+        "building_location": "Building A"
+      },
+      "dimensions": {
+        "length": "10ft",
+        "width": "10ft",
+        "area_size": "100 SQFT",
+        "height": "9ft"
+      },
+      "unit_is": "vacant",
+      "monthly_rate": 9000,
+      "other_information": {
+        "creation_date": "2024-01-01",
+        "end_date": "",
+        "last_su_sync": "2024-02-01"
+      },
+      "maintenance_comments": "Freshly painted and cleaned.",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 27. Update Unit (Admin)
+**Update storage unit details (Admin only)**
+
+- **Method:** `PUT`
+- **Endpoint:** `/api/admin/units/:id`
+- **Description:** Updates unit information. Admin access required.
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or `adminToken` cookie
+- **Request Body:** Any subset of unit fields
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Unit updated successfully",
+    "data": {
+      "_id": "64f96f3f5c1d2b7f8c654321",
+      "unit_is": "rented",
+      "monthly_rate": 9500,
+      "updatedAt": "2024-01-05T10:15:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 28. Delete Unit (Admin)
+**Delete a storage unit (Admin only)**
+
+- **Method:** `DELETE`
+- **Endpoint:** `/api/admin/units/:id`
+- **Description:** Deletes a unit by ID. Admin access required.
+- **Headers:** `Authorization: Bearer <adminToken>` or `adminToken` cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Unit deleted successfully",
+    "data": {}
+  }
+  ```
+
+---
+
+### 29. Create Unit Type (Admin)
+**Create a new unit type definition**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/admin/unit-types`
+- **Description:** Adds a unit type configuration with pricing and size data. Admin access required.
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:**
+  ```json
+  {
+    "type_code": "CLIMATE10X10",
+    "description": "Climate controlled 10x10 units",
+    "unit_type_configuration": {
+      "type_code": "CC-10",
+      "sort_order": 1,
+      "deposit": 200,
+      "monthly_rate": 9000,
+      "weekly_rate": 2500,
+      "daily_rate": 400,
+      "unit_type_and_size": {
+        "length": 10,
+        "width": 10,
+        "area_size": 100,
+        "height": 9,
+        "length_is_variable": false
+      }
+    },
+    "assignments": {
+      "billing_plan": "Standard",
+      "rental_analysis_code": "RAC-01",
+      "organization_analysis_code": "OAC-02"
+    }
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Unit type created successfully",
+    "data": {
+      "_id": "64fa70bf2c8d1a0012345678",
+      "type_code": "CLIMATE10X10",
+      "description": "Climate controlled 10x10 units",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 30. Get Unit Types (Admin)
+**Get paginated list of unit types**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/unit-types`
+- **Description:** Returns paginated list of all unit types. Admin access required.
+- **Query Parameters:** `page`, `limit`
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "count": 2,
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 1,
+      "totalItems": 2,
+      "limit": 10,
+      "hasNextPage": false,
+      "hasPrevPage": false,
+      "nextPage": null,
+      "prevPage": null
+    },
+    "data": [
+      {
+        "_id": "64fa70bf2c8d1a0012345678",
+        "type_code": "CLIMATE10X10",
+        "description": "Climate controlled 10x10 units",
+        "createdAt": "2024-01-01T00:00:00.000Z",
+        "updatedAt": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 31. Get Unit Type by ID (Admin)
+**Get unit type details (Admin only)**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/unit-types/:id`
+- **Description:** Returns a unit type by ID. Admin access required.
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "64fa70bf2c8d1a0012345678",
+      "type_code": "CLIMATE10X10",
+      "description": "Climate controlled 10x10 units",
+      "unit_type_configuration": {
+        "type_code": "CC-10",
+        "sort_order": 1,
+        "deposit": 200,
+        "monthly_rate": 9000,
+        "weekly_rate": 2500,
+        "daily_rate": 400,
+        "unit_type_and_size": {
+          "length": 10,
+          "width": 10,
+          "area_size": 100,
+          "height": 9,
+          "length_is_variable": false
+        }
+      },
+      "assignments": {
+        "billing_plan": "Standard",
+        "rental_analysis_code": "RAC-01",
+        "organization_analysis_code": "OAC-02"
+      },
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 32. Update Unit Type (Admin)
+**Update a unit type**
+
+- **Method:** `PUT`
+- **Endpoint:** `/api/admin/unit-types/:id`
+- **Description:** Updates a unit type configuration. Admin access required.
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:** Any subset of unit type fields
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Unit type updated successfully",
+    "data": {
+      "_id": "64fa70bf2c8d1a0012345678",
+      "type_code": "CLIMATE10X10",
+      "description": "Updated description",
+      "updatedAt": "2024-01-05T10:15:00.000Z",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 33. Delete Unit Type (Admin)
+**Delete a unit type**
+
+- **Method:** `DELETE`
+- **Endpoint:** `/api/admin/unit-types/:id`
+- **Description:** Deletes a unit type by ID. Admin access required.
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Unit type deleted successfully",
+    "data": {}
+  }
+  ```
+
+---
+
 ## 📊 System APIs
 
 ### 16. Health Check
@@ -1230,6 +1599,26 @@ fetch('http://localhost:5000/api/auth/me', {
 - `GET /api/admin/users/:id` - Get user (admin scoped)
 - `PUT /api/admin/users/:id` - Update user (admin scoped)
 - `DELETE /api/admin/users/:id` - Delete user (admin scoped)
+- `POST /api/admin/locations` - Create location
+- `GET /api/admin/locations` - List locations
+- `GET /api/admin/locations/:id` - Get location
+- `PUT /api/admin/locations/:id` - Update location
+- `DELETE /api/admin/locations/:id` - Delete location
+- `POST /api/admin/units` - Create unit
+- `GET /api/admin/units` - List units
+- `GET /api/admin/units/:id` - Get unit
+- `PUT /api/admin/units/:id` - Update unit
+- `DELETE /api/admin/units/:id` - Delete unit
+- `POST /api/admin/unit-types` - Create unit type
+- `GET /api/admin/unit-types` - List unit types
+- `GET /api/admin/unit-types/:id` - Get unit type
+- `PUT /api/admin/unit-types/:id` - Update unit type
+- `DELETE /api/admin/unit-types/:id` - Delete unit type
+- `POST /api/admin/analysis-codes` - Create analysis code
+- `GET /api/admin/analysis-codes` - List analysis codes
+- `GET /api/admin/analysis-codes/:id` - Get analysis code
+- `PUT /api/admin/analysis-codes/:id` - Update analysis code
+- `DELETE /api/admin/analysis-codes/:id` - Delete analysis code
 
 ---
 

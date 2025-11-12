@@ -12,7 +12,7 @@ A Node.js backend API built with Express.js and MongoDB with full user managemen
 - **Password Hashing** - Bcrypt encryption for secure password storage
 - **Role-based Authorization** - User roles (user, admin, moderator)
 - **Password Reset Flow** - Email-based password reset with secure token verification
-- **Admin Location Management** - CRUD for storage facility locations with detailed metadata
+- **Admin Location, Unit, Unit-Type & Analysis Code Management** - CRUD for locations, units, reusable unit-type configurations, and accounting analysis codes
 - Environment variable configuration
 - CORS enabled with credentials support
 - Security middleware (Helmet)
@@ -350,6 +350,182 @@ The server will start on `http://localhost:5000` (or the port specified in `.env
 
 #### Delete Location (Admin)
 - **DELETE** `/api/admin/locations/:id` - Remove a location
+  - **Headers:** Requires valid admin JWT token
+  - **Response:** Success message
+
+#### Create Unit (Admin)
+- **POST** `/api/admin/units` - Create a storage unit entry
+  - **Headers:** Requires valid admin JWT token
+  - **Body:**
+    ```json
+    {
+      "unit_number": "A001",
+      "location": "DT-001",
+      "location_two": "Secondary Warehouse",
+      "description": "Climate controlled 10x10 unit",
+      "unit_details": {
+        "unit_number": "A001",
+        "unit_type": "Climate Controlled",
+        "unit_size": "10x10",
+        "door_size": "8ft roll-up",
+        "unit_status": "vacant",
+        "walk_order": "1",
+        "building_location": "Building A"
+      },
+      "dimensions": {
+        "length": "10ft",
+        "width": "10ft",
+        "area_size": "100 SQFT",
+        "height": "9ft"
+      },
+      "unit_is": "vacant",
+      "monthly_rate": 9000,
+      "other_information": {
+        "creation_date": "2024-01-01",
+        "end_date": "",
+        "last_su_sync": "2024-02-01"
+      },
+      "maintenance_comments": "Freshly painted and cleaned."
+    }
+    ```
+    - **unit_status options:** `vacant`, `rented`, `reserved`, `company`, `repair`, `to clean`, `locked`, `on site`, `Unavailable`
+  - **Response:** Created unit object
+
+#### Get Units (Admin)
+- **GET** `/api/admin/units` - List units with pagination
+  - **Headers:** Requires valid admin JWT token
+  - **Query Parameters:** `page`, `limit`
+  - **Response:** Paginated units list
+
+#### Get Unit by ID (Admin)
+- **GET** `/api/admin/units/:id` - Fetch specific unit details
+  - **Headers:** Requires valid admin JWT token
+  - **Response:** Unit object
+
+#### Update Unit (Admin)
+- **PUT** `/api/admin/units/:id` - Update unit details
+  - **Headers:** Requires valid admin JWT token
+  - **Body:** Any subset of unit fields
+  - **Response:** Updated unit object
+
+#### Delete Unit (Admin)
+- **DELETE** `/api/admin/units/:id` - Delete unit
+  - **Headers:** Requires valid admin JWT token
+  - **Response:** Success message
+
+#### Create Unit Type (Admin)
+- **POST** `/api/admin/unit-types` - Create a unit type configuration
+  - **Headers:** Requires valid admin JWT token
+  - **Body:**
+    ```json
+    {
+      "type_code": "CLIMATE10X10",
+      "description": "Climate controlled 10x10 units",
+      "unit_type_configuration": {
+        "type_code": "CC-10",
+        "sort_order": 1,
+        "deposit": 200,
+        "monthly_rate": 9000,
+        "weekly_rate": 2500,
+        "daily_rate": 400,
+        "unit_type_and_size": {
+          "length": 10,
+          "width": 10,
+          "area_size": 100,
+          "height": 9,
+          "length_is_variable": false
+        }
+      },
+      "assignments": {
+        "billing_plan": "Standard",
+        "rental_analysis_code": "RAC-01",
+        "organization_analysis_code": "OAC-02"
+      }
+    }
+    ```
+  - **Response:** Created unit type object
+  - **Note:** `unit_type_configuration.type_code` and top-level `type_code` are stored uppercase automatically
+
+#### Get Unit Types (Admin)
+- **GET** `/api/admin/unit-types` - List unit types with pagination
+  - **Headers:** Requires valid admin JWT token
+  - **Response:** Paginated unit types list
+
+#### Get Unit Type by ID (Admin)
+- **GET** `/api/admin/unit-types/:id` - Fetch specific unit type
+  - **Headers:** Requires valid admin JWT token
+  - **Response:** Unit type object
+
+#### Update Unit Type (Admin)
+- **PUT** `/api/admin/unit-types/:id` - Update unit type
+  - **Headers:** Requires valid admin JWT token
+  - **Body:** Any subset of unit type fields
+  - **Response:** Updated unit type object
+
+#### Delete Unit Type (Admin)
+- **DELETE** `/api/admin/unit-types/:id` - Delete unit type
+  - **Headers:** Requires valid admin JWT token
+  - **Response:** Success message
+
+#### Create Analysis Code (Admin)
+- **POST** `/api/admin/analysis-codes` - Create an analysis code configuration
+  - **Headers:** Requires valid admin JWT token
+  - **Body:**
+    ```json
+    {
+      "analysis_code": "LATEFEE",
+      "sort_order": 1,
+      "gl_acct_code": "GL1001",
+      "description": "Late fee",
+      "analysis_code_options
+      
+      ": {
+        "use_this_code": true,
+        "available_for_sales": true,
+        "taxable": false,
+        "bill_on_move_in": false,
+        "bill_on_move_out": true,
+        "show_as_other_regular_charges": true,
+        "show_code": "LF",
+        "everywhere": "All",
+        "keys_stats_category": "Fees",
+        "analysis_category": "Late Fees",
+        "special_options": "Notify accounting"
+      },
+      "analysis_code_setup": {
+        "default_sell_amount": 25,
+        "minimum_sell_amount": 10,
+        "maximum_sell_amount": 50,
+        "credit_percentage": 5,
+        "statndard_code_price": 20
+      },
+      "stock_control_settings": {
+        "enable_online": false,
+        "enable_stock_control": false
+      }
+    }
+    ```
+  - **Response:** Created analysis code object
+  - **Note:** `analysis_code` and `gl_acct_code` are stored uppercase automatically
+
+#### Get Analysis Codes (Admin)
+- **GET** `/api/admin/analysis-codes` - List analysis codes with pagination
+  - **Headers:** Requires valid admin JWT token
+  - **Response:** Paginated analysis codes list
+
+#### Get Analysis Code by ID (Admin)
+- **GET** `/api/admin/analysis-codes/:id` - Fetch specific analysis code
+  - **Headers:** Requires valid admin JWT token
+  - **Response:** Analysis code object
+
+#### Update Analysis Code (Admin)
+- **PUT** `/api/admin/analysis-codes/:id` - Update analysis code
+  - **Headers:** Requires valid admin JWT token
+  - **Body:** Any subset of analysis code fields
+  - **Response:** Updated analysis code object
+
+#### Delete Analysis Code (Admin)
+- **DELETE** `/api/admin/analysis-codes/:id` - Delete analysis code
   - **Headers:** Requires valid admin JWT token
   - **Response:** Success message
 

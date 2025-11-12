@@ -129,6 +129,30 @@ Protected with `protectAdmin` middleware - checks for `adminToken` cookie:
 - Use `/api/auth/admin/login` for admin login
 - Store and send `adminToken` cookie with requests
 - Handle 403 errors (redirect to admin login)
+- Manage locations via:
+  - `POST /api/admin/locations`
+  - `GET /api/admin/locations`
+  - `GET /api/admin/locations/:id`
+  - `PUT /api/admin/locations/:id`
+  - `DELETE /api/admin/locations/:id`
+- Manage units via:
+  - `POST /api/admin/units`
+  - `GET /api/admin/units`
+  - `GET /api/admin/units/:id`
+  - `PUT /api/admin/units/:id`
+  - `DELETE /api/admin/units/:id`
+- Manage unit types via:
+  - `POST /api/admin/unit-types`
+  - `GET /api/admin/unit-types`
+  - `GET /api/admin/unit-types/:id`
+  - `PUT /api/admin/unit-types/:id`
+  - `DELETE /api/admin/unit-types/:id`
+- Manage analysis codes via:
+  - `POST /api/admin/analysis-codes`
+  - `GET /api/admin/analysis-codes`
+  - `GET /api/admin/analysis-codes/:id`
+  - `PUT /api/admin/analysis-codes/:id`
+  - `DELETE /api/admin/analysis-codes/:id`
 
 ## Password Reset Flow
 - Users trigger `POST /api/auth/forgot-password` with their email address.

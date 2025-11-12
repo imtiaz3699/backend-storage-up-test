@@ -58,13 +58,17 @@ Implemented complete user management system with CRUD operations, dual (client/a
 - Secure tokens stored hashed in DB with expiry (`PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`)
 - Email notifications delivered via SMTP (`utils/emailService.js`) with automatic Ethereal fallback for development environments
 
-### 5. Location Management (Admin)
+### 5. Location, Unit & Unit-Type Management (Admin)
 - **Create Location** - POST `/api/admin/locations` with detailed address, facilities, and media fields
 - **List Locations** - GET `/api/admin/locations` with pagination metadata
 - **Location Details** - GET `/api/admin/locations/:id`
 - **Update Location** - PUT `/api/admin/locations/:id`
 - **Delete Location** - DELETE `/api/admin/locations/:id`
 - Comprehensive schema includes contact info, map link, facility amenities, operating hours, and gallery images
+- **Create Unit** - POST `/api/admin/units` with unit details, dimensions, pricing, and maintenance notes
+- **List Units / Unit Details / Update / Delete** - Full CRUD endpoints under `/api/admin/units`
+- **Create Unit Type** - POST `/api/admin/unit-types` for reusable configuration of pricing and size data
+- **List Unit Types / Details / Update / Delete** - Full CRUD endpoints under `/api/admin/unit-types`
 
 ## Technical Implementation
 
@@ -125,6 +129,27 @@ Implemented complete user management system with CRUD operations, dual (client/a
 - `GET /api/admin/locations/:id` - Get location by ID
 - `PUT /api/admin/locations/:id` - Update location
 - `DELETE /api/admin/locations/:id` - Delete location
+
+**Admin Unit Routes:**
+- `POST /api/admin/units` - Create unit
+- `GET /api/admin/units` - List units (with pagination)
+- `GET /api/admin/units/:id` - Get unit by ID
+- `PUT /api/admin/units/:id` - Update unit
+- `DELETE /api/admin/units/:id` - Delete unit
+
+**Admin Unit Type Routes:**
+- `POST /api/admin/unit-types` - Create unit type
+- `GET /api/admin/unit-types` - List unit types (with pagination)
+- `GET /api/admin/unit-types/:id` - Get unit type by ID
+- `PUT /api/admin/unit-types/:id` - Update unit type
+- `DELETE /api/admin/unit-types/:id` - Delete unit type
+
+**Admin Analysis Code Routes:**
+- `POST /api/admin/analysis-codes` - Create analysis code
+- `GET /api/admin/analysis-codes` - List analysis codes (with pagination)
+- `GET /api/admin/analysis-codes/:id` - Get analysis code by ID
+- `PUT /api/admin/analysis-codes/:id` - Update analysis code
+- `DELETE /api/admin/analysis-codes/:id` - Delete analysis code
 
 **Admin Routes (Protected):**
 - `GET /api/admin/users` - List all users (admin only, with pagination)
@@ -193,6 +218,21 @@ Implemented complete user management system with CRUD operations, dual (client/a
 4. Fetch details: `GET /api/admin/locations/:id`
 5. Update record: `PUT /api/admin/locations/:id` with modified fields
 6. Delete record: `DELETE /api/admin/locations/:id`
+
+### Testing Unit Management
+1. Authenticate as admin and note the `adminToken`
+2. Create a unit type: `POST /api/admin/unit-types`
+3. Create a unit: `POST /api/admin/units` (referencing the location/unit type as desired)
+4. List units and unit types: `GET /api/admin/units`, `GET /api/admin/unit-types`
+5. Update a unit & unit type: `PUT /api/admin/units/:id`, `PUT /api/admin/unit-types/:id`
+6. Delete any test units/unit types when done: `DELETE /api/admin/units/:id`, `DELETE /api/admin/unit-types/:id`
+
+### Testing Analysis Codes
+1. Create analysis code: `POST /api/admin/analysis-codes`
+2. List codes: `GET /api/admin/analysis-codes`
+3. Retrieve by ID: `GET /api/admin/analysis-codes/:id`
+4. Update details: `PUT /api/admin/analysis-codes/:id`
+5. Delete code after testing: `DELETE /api/admin/analysis-codes/:id`
 
 ## Important Notes
 
