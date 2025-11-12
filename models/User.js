@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 const userSchema = new mongoose.Schema({
   name: {
@@ -36,6 +37,14 @@ const userSchema = new mongoose.Schema({
       values: ['user', 'admin', 'moderator'],
       message: 'Role must be one of: user, admin, moderator'
     }
+  },
+  passwordResetToken: {
+    type: String,
+    select: false
+  },
+  passwordResetExpires: {
+    type: Date,
+    select: false
   }
 }, {
   timestamps: true // Adds createdAt and updatedAt fields
@@ -68,6 +77,22 @@ userSchema.methods.toJSON = function() {
   const userObject = this.toObject();
   delete userObject.password;
   return userObject;
+};
+
+userSchema.methods.createPasswordResetToken = function() {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  const tokenExpiryMinutes = Number(process.env.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES) || 30;
+
+  this.passwordResetToken = hashedToken;
+  this.passwordResetExpires = new Date(Date.now() + tokenExpiryMinutes * 60 * 1000);
+
+  return resetToken;
+};
+
+userSchema.methods.clearPasswordResetToken = function() {
+  this.passwordResetToken = undefined;
+  this.passwordResetExpires = undefined;
 };
 
 const User = mongoose.model('User', userSchema);

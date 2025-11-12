@@ -11,12 +11,15 @@ A Node.js backend API built with Express.js and MongoDB with full user managemen
 - **Cookie-based Token Storage** - HttpOnly cookies for enhanced security
 - **Password Hashing** - Bcrypt encryption for secure password storage
 - **Role-based Authorization** - User roles (user, admin, moderator)
+- **Password Reset Flow** - Email-based password reset with secure token verification
+- **Admin Location Management** - CRUD for storage facility locations with detailed metadata
 - Environment variable configuration
 - CORS enabled with credentials support
 - Security middleware (Helmet)
 - Request logging (Morgan)
 - Error handling middleware
 - Organized project structure
+- Developer-friendly email testing (automatic Ethereal account when SMTP not configured)
 
 ## Prerequisites
 
@@ -51,7 +54,15 @@ A Node.js backend API built with Express.js and MongoDB with full user managemen
      JWT_SECRET=your-secret-key-here-change-this-in-production
      JWT_EXPIRE=7d
      CLIENT_URL=http://localhost:3000
+     EMAIL_FROM="StorageUp <no-reply@storageup.com>"
+     SMTP_HOST=smtp.yourprovider.com
+     SMTP_PORT=587
+     SMTP_SECURE=false
+     SMTP_USER=your-smtp-username
+     SMTP_PASS=your-smtp-password
+     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
      ```
+   - If you leave SMTP values blank in development, the backend automatically uses a temporary Ethereal test inbox and logs the preview URL to the console.
 
 ## Running the Application
 
@@ -144,6 +155,32 @@ The server will start on `http://localhost:5000` (or the port specified in `.env
 - **GET** `/api/auth/me` - Get current authenticated user (Protected)
   - **Headers:** Requires valid JWT token in `token` or `adminToken` cookie or Authorization header
   - **Response:** Returns current user object
+
+#### Forgot Password
+- **POST** `/api/auth/forgot-password` - Request a password reset link
+  - **Body:**
+    ```json
+    {
+      "email": "john@example.com"
+    }
+    ```
+  - **Response:** Always returns success message to avoid revealing valid emails
+
+#### Verify Reset Token
+- **GET** `/api/auth/reset-password/verify?token=<token>` - Validate reset token before showing reset form
+  - **Response:** Returns basic user info when the token is valid
+
+#### Reset Password
+- **POST** `/api/auth/reset-password` - Reset password using the email link token
+  - **Body:**
+    ```json
+    {
+      "token": "reset-token-from-email",
+      "password": "newPassword123!",
+      "confirmPassword": "newPassword123!"
+    }
+    ```
+  - **Response:** Success message indicating the password has been updated
 
 ### User Routes (`/api/users`)
 
@@ -244,6 +281,75 @@ The server will start on `http://localhost:5000` (or the port specified in `.env
 
 #### Delete User (Admin)
 - **DELETE** `/api/admin/users/:id` - Delete any user (Admin only)
+  - **Headers:** Requires valid admin JWT token
+  - **Response:** Success message
+
+#### Create Location (Admin)
+- **POST** `/api/admin/locations` - Create a new location record
+  - **Headers:** Requires valid admin JWT token
+  - **Body:**
+    ```json
+    {
+      "locationDetails": {
+        "locationName": "StorageUp Downtown",
+        "locationCode": "DT-001",
+        "emailAddress": "contact@storageup.com",
+        "phoneNumber": "+1 555 123 4567",
+        "manager": "Jane Manager"
+      },
+      "locationStatus": "active",
+      "residentialAddress": {
+        "addressLineOne": "123 Main Street",
+        "addressLineTwo": "Suite 200",
+        "city": "Metropolis",
+        "stateProvince": "NY",
+        "zip_code": "10001"
+      },
+      "locationMap": "https://maps.google.com/?q=123+Main+Street",
+      "facilityInformation": {
+        "totalUnits": 100,
+        "availableUnits": 25,
+        "squareFoot": "5000SQ",
+        "climateControl": true,
+        "24_7_security": true,
+        "24_7_access": false,
+        "parkingAvailable": true,
+        "loadingDock": true,
+        "elevatorAccess": false,
+        "driveUpUnits": true,
+        "truckRental": false,
+        "movingSuppliers": true
+      },
+      "operatingHours": {
+        "officeHours": "Mon-Fri 9am-6pm",
+        "accessHours": "24/7"
+      },
+      "locationImages": [
+        "https://cdn.storageup.com/locations/downtown/img-1.jpg"
+      ]
+    }
+    ```
+  - **Response:** Created location object
+
+#### Get Locations (Admin)
+- **GET** `/api/admin/locations` - List all locations with pagination
+  - **Headers:** Requires valid admin JWT token
+  - **Query Parameters:** Same as user listing (`page`, `limit`)
+  - **Response:** Paginated locations list
+
+#### Get Location by ID (Admin)
+- **GET** `/api/admin/locations/:id` - Fetch a specific location
+  - **Headers:** Requires valid admin JWT token
+  - **Response:** Location object
+
+#### Update Location (Admin)
+- **PUT** `/api/admin/locations/:id` - Update location details
+  - **Headers:** Requires valid admin JWT token
+  - **Body:** Any subset of fields from the create payload
+  - **Response:** Updated location object
+
+#### Delete Location (Admin)
+- **DELETE** `/api/admin/locations/:id` - Remove a location
   - **Headers:** Requires valid admin JWT token
   - **Response:** Success message
 

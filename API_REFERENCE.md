@@ -259,9 +259,118 @@ This document contains all API endpoints, request payloads, and response example
 
 ---
 
+### 7. Forgot Password
+**Request password reset email**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/auth/forgot-password`
+- **Description:** Sends a password reset link to the user's email if the account exists.
+- **Headers:**
+  ```json
+  {
+    "Content-Type": "application/json"
+  }
+  ```
+- **Request Body:**
+  ```json
+  {
+    "email": "john@example.com"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "If an account exists for that email, a reset link has been sent."
+  }
+  ```
+- **Error (400 Bad Request):**
+  ```json
+  {
+    "success": false,
+    "message": "Please provide the email address associated with your account."
+  }
+  ```
+
+---
+
+### 8. Verify Reset Token
+**Validate reset token before showing reset form**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/auth/reset-password/verify`
+- **Description:** Verifies the reset token passed as a query parameter.
+- **Query Parameters:**
+  - `token` (required) - Token from the reset email
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Reset token is valid.",
+    "data": {
+      "userId": "507f1f77bcf86cd799439011",
+      "email": "john@example.com",
+      "name": "John Doe"
+    }
+  }
+  ```
+- **Error (400 Bad Request):**
+  ```json
+  {
+    "success": false,
+    "message": "The reset link is invalid or has expired. Please request a new one."
+  }
+  ```
+
+---
+
+### 9. Reset Password
+**Reset password using token**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/auth/reset-password`
+- **Description:** Resets the user's password with a valid token.
+- **Headers:**
+  ```json
+  {
+    "Content-Type": "application/json"
+  }
+  ```
+- **Request Body:**
+  ```json
+  {
+    "token": "reset-token-from-email",
+    "password": "newPassword123!",
+    "confirmPassword": "newPassword123!"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Password reset successfully. You can now log in with your new password."
+  }
+  ```
+- **Error (400 Bad Request):**
+  ```json
+  {
+    "success": false,
+    "message": "Passwords do not match."
+  }
+  ```
+- **Error (400 Bad Request - Invalid Token):**
+  ```json
+  {
+    "success": false,
+    "message": "The reset link is invalid or has expired. Please request a new one."
+  }
+  ```
+
+---
+
 ## 👥 User Management APIs (Admin Protected)
 
-### 7. Create User
+### 10. Create User
 **Create a new user (Admin only)**
 
 - **Method:** `POST`
@@ -312,7 +421,7 @@ This document contains all API endpoints, request payloads, and response example
 
 ---
 
-### 8. Get All Users (with Pagination)
+### 11. Get All Users (with Pagination)
 **Get paginated list of all users (Admin only)**
 
 - **Method:** `GET`
@@ -362,7 +471,7 @@ This document contains all API endpoints, request payloads, and response example
 
 ---
 
-### 9. Get User by ID
+### 12. Get User by ID
 **Get a specific user by ID (Admin only)**
 
 - **Method:** `GET`
@@ -404,7 +513,7 @@ This document contains all API endpoints, request payloads, and response example
 
 ---
 
-### 10. Update User
+### 13. Update User
 **Update user information (Admin only)**
 
 - **Method:** `PUT`
@@ -457,7 +566,7 @@ This document contains all API endpoints, request payloads, and response example
 
 ---
 
-### 11. Delete User
+### 14. Delete User
 **Delete a user (Admin only)**
 
 - **Method:** `DELETE`
@@ -496,7 +605,7 @@ This document contains all API endpoints, request payloads, and response example
 
 **Note:** All admin routes require authentication with `adminToken` cookie or `Authorization: Bearer <token>` header.
 
-### 12. Get All Users (Admin)
+### 15. Get All Users (Admin)
 **Get paginated list of all users (Admin only)**
 
 - **Method:** `GET`
@@ -561,7 +670,7 @@ This document contains all API endpoints, request payloads, and response example
 
 ---
 
-### 13. Get User by ID (Admin)
+### 16. Get User by ID (Admin)
 **Get specific user details (Admin only)**
 
 - **Method:** `GET`
@@ -597,7 +706,7 @@ This document contains all API endpoints, request payloads, and response example
 
 ---
 
-### 14. Update User (Admin)
+### 17. Update User (Admin)
 **Update any user (Admin only)**
 
 - **Method:** `PUT`
@@ -644,7 +753,7 @@ This document contains all API endpoints, request payloads, and response example
 
 ---
 
-### 15. Delete User (Admin)
+### 18. Delete User (Admin)
 **Delete any user (Admin only)**
 
 - **Method:** `DELETE`
@@ -667,6 +776,306 @@ This document contains all API endpoints, request payloads, and response example
   {
     "success": true,
     "message": "User deleted successfully",
+    "data": {}
+  }
+  ```
+
+---
+
+### 19. Create Location (Admin)
+**Create a new location record**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/admin/locations`
+- **Description:** Adds a new storage facility location. Admin access required.
+- **Headers:**
+  ```json
+  {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer <adminToken>"
+  }
+  ```
+  OR send `adminToken` cookie with the request (`credentials: 'include'`).
+- **Request Body:** (Example)
+  ```json
+  {
+    "locationDetails": {
+      "locationName": "StorageUp Downtown",
+      "locationCode": "DT-001",
+      "emailAddress": "contact@storageup.com",
+      "phoneNumber": "+1 555 123 4567",
+      "manager": "Jane Manager"
+    },
+    "locationStatus": "active",
+    "residentialAddress": {
+      "addressLineOne": "123 Main Street",
+      "addressLineTwo": "Suite 200",
+      "city": "Metropolis",
+      "stateProvince": "NY",
+      "zip_code": "10001"
+    },
+    "locationMap": "https://maps.google.com/?q=123+Main+Street",
+    "facilityInformation": {
+      "totalUnits": 100,
+      "availableUnits": 25,
+      "squareFoot": "5000SQ",
+      "climateControl": true,
+      "24_7_security": true,
+      "24_7_access": false,
+      "parkingAvailable": true,
+      "loadingDock": true,
+      "elevatorAccess": false,
+      "driveUpUnits": true,
+      "truckRental": false,
+      "movingSuppliers": true
+    },
+    "operatingHours": {
+      "officeHours": "Mon-Fri 9am-6pm",
+      "accessHours": "24/7"
+    },
+    "locationImages": [
+      "https://cdn.storageup.com/locations/downtown/img-1.jpg"
+    ]
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Location created successfully",
+    "data": {
+      "_id": "64f96e3f5c1d2b7f8c123456",
+      "locationDetails": {
+        "locationName": "StorageUp Downtown",
+        "locationCode": "DT-001",
+        "emailAddress": "contact@storageup.com",
+        "phoneNumber": "+1 555 123 4567",
+        "manager": "Jane Manager"
+      },
+      "locationStatus": "active",
+      "residentialAddress": {
+        "addressLineOne": "123 Main Street",
+        "addressLineTwo": "Suite 200",
+        "city": "Metropolis",
+        "stateProvince": "NY",
+        "zip_code": "10001"
+      },
+      "locationMap": "https://maps.google.com/?q=123+Main+Street",
+      "facilityInformation": {
+        "totalUnits": 100,
+        "availableUnits": 25,
+        "squareFoot": "5000SQ",
+        "climateControl": true,
+        "24_7_security": true,
+        "24_7_access": false,
+        "parkingAvailable": true,
+        "loadingDock": true,
+        "elevatorAccess": false,
+        "driveUpUnits": true,
+        "truckRental": false,
+        "movingSuppliers": true
+      },
+      "operatingHours": {
+        "officeHours": "Mon-Fri 9am-6pm",
+        "accessHours": "24/7"
+      },
+      "locationImages": [
+        "https://cdn.storageup.com/locations/downtown/img-1.jpg"
+      ],
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+- **Error (400 Bad Request):**
+  ```json
+  {
+    "success": false,
+    "message": "Validation error",
+    "errors": [
+      "Location name is required"
+    ]
+  }
+  ```
+
+---
+
+### 20. Get Locations (Admin)
+**Get paginated list of locations (Admin only)**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/locations`
+- **Description:** Returns paginated list of all locations. Admin access required.
+- **Query Parameters:**
+  - `page` (optional, default: 1) - Page number
+  - `limit` (optional, default: 10) - Number of items per page
+- **Headers:**
+  ```json
+  {
+    "Authorization": "Bearer <adminToken>"
+  }
+  ```
+  OR send `adminToken` cookie with the request (`credentials: 'include'`).
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "count": 2,
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 1,
+      "totalItems": 2,
+      "limit": 10,
+      "hasNextPage": false,
+      "hasPrevPage": false,
+      "nextPage": null,
+      "prevPage": null
+    },
+    "data": [
+      {
+        "_id": "64f96e3f5c1d2b7f8c123456",
+        "locationDetails": {
+          "locationName": "StorageUp Downtown",
+          "locationCode": "DT-001"
+        },
+        "locationStatus": "active",
+        "residentialAddress": {
+          "city": "Metropolis",
+          "stateProvince": "NY"
+        },
+        "facilityInformation": {
+          "totalUnits": 100,
+          "availableUnits": 25
+        },
+        "createdAt": "2024-01-01T00:00:00.000Z",
+        "updatedAt": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 21. Get Location by ID (Admin)
+**Get location details (Admin only)**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/locations/:id`
+- **Description:** Returns a specific location by ID. Admin access required.
+- **Headers:**
+  ```json
+  {
+    "Authorization": "Bearer <adminToken>"
+  }
+  ```
+  OR send `adminToken` cookie with the request (`credentials: 'include'`).
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "64f96e3f5c1d2b7f8c123456",
+      "locationDetails": {
+        "locationName": "StorageUp Downtown",
+        "locationCode": "DT-001",
+        "emailAddress": "contact@storageup.com",
+        "phoneNumber": "+1 555 123 4567",
+        "manager": "Jane Manager"
+      },
+      "locationStatus": "active",
+      "residentialAddress": {
+        "addressLineOne": "123 Main Street",
+        "addressLineTwo": "Suite 200",
+        "city": "Metropolis",
+        "stateProvince": "NY",
+        "zip_code": "10001"
+      },
+      "locationMap": "https://maps.google.com/?q=123+Main+Street",
+      "facilityInformation": {
+        "totalUnits": 100,
+        "availableUnits": 25,
+        "squareFoot": "5000SQ",
+        "climateControl": true,
+        "24_7_security": true,
+        "24_7_access": false,
+        "parkingAvailable": true,
+        "loadingDock": true,
+        "elevatorAccess": false,
+        "driveUpUnits": true,
+        "truckRental": false,
+        "movingSuppliers": true
+      },
+      "operatingHours": {
+        "officeHours": "Mon-Fri 9am-6pm",
+        "accessHours": "24/7"
+      },
+      "locationImages": [
+        "https://cdn.storageup.com/locations/downtown/img-1.jpg"
+      ],
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+- **Error (404 Not Found):**
+  ```json
+  {
+    "success": false,
+    "message": "Location not found"
+  }
+  ```
+
+---
+
+### 22. Update Location (Admin)
+**Update location details (Admin only)**
+
+- **Method:** `PUT`
+- **Endpoint:** `/api/admin/locations/:id`
+- **Description:** Updates location information. Admin access required.
+- **Headers:**
+  ```json
+  {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer <adminToken>"
+  }
+  ```
+  OR send `adminToken` cookie with the request (`credentials: 'include'`).
+- **Request Body:** Any subset of fields from the create payload
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Location updated successfully",
+    "data": {
+      "_id": "64f96e3f5c1d2b7f8c123456",
+      "locationStatus": "underMaintenance",
+      "updatedAt": "2024-01-02T08:30:00.000Z",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 23. Delete Location (Admin)
+**Delete a location (Admin only)**
+
+- **Method:** `DELETE`
+- **Endpoint:** `/api/admin/locations/:id`
+- **Description:** Deletes a location by ID. Admin access required.
+- **Headers:**
+  ```json
+  {
+    "Authorization": "Bearer <adminToken>"
+  }
+  ```
+  OR send `adminToken` cookie with the request (`credentials: 'include'`).
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Location deleted successfully",
     "data": {}
   }
   ```
@@ -804,20 +1213,23 @@ fetch('http://localhost:5000/api/auth/me', {
 - `POST /api/auth/login` - Login
 - `POST /api/auth/logout` - Logout
 - `GET /api/auth/me` - Get current user
-- `GET /api/users` - List users (paginated)
-- `GET /api/users/:id` - Get user
-- `PUT /api/users/:id` - Update user
-- `DELETE /api/users/:id` - Delete user
+- `POST /api/auth/forgot-password` - Request password reset
+- `GET /api/auth/reset-password/verify` - Validate reset token
+- `POST /api/auth/reset-password` - Reset password
 
 ### Admin App Endpoints
 - `POST /api/auth/admin/signup` - Register admin
 - `POST /api/auth/admin/login` - Admin login
 - `POST /api/auth/logout` - Logout
 - `GET /api/auth/me` - Get current admin
-- `GET /api/admin/users` - List all users (admin)
-- `GET /api/admin/users/:id` - Get user (admin)
-- `PUT /api/admin/users/:id` - Update user (admin)
-- `DELETE /api/admin/users/:id` - Delete user (admin)
+- `GET /api/users` - List all users (admin)
+- `GET /api/users/:id` - Get user (admin)
+- `PUT /api/users/:id` - Update user (admin)
+- `DELETE /api/users/:id` - Delete user (admin)
+- `GET /api/admin/users` - List all users (admin scoped endpoints)
+- `GET /api/admin/users/:id` - Get user (admin scoped)
+- `PUT /api/admin/users/:id` - Update user (admin scoped)
+- `DELETE /api/admin/users/:id` - Delete user (admin scoped)
 
 ---
 

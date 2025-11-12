@@ -1,5 +1,9 @@
-import User from "../models/User.js";
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import User from "../models/User.js";
+import { sendEmail } from "../utils/emailService.js";
+
+const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
 
 // Generate JWT Token
 const generateToken = (userId) => {
@@ -197,6 +201,167 @@ export const getMe = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching user",
+      error: error.message,
+    });
+  }
+};
+
+// Forgot password - send reset link
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: "Please provide the email address associated with your account.",
+    });
+  }
+
+  let user;
+
+  try {
+    user = await User.findOne({ email }).select("+passwordResetToken +passwordResetExpires");
+
+    if (!user) {
+      // Respond with success message to avoid user enumeration
+      return res.status(200).json({
+        success: true,
+        message: "If an account exists for that email, a reset link has been sent.",
+      });
+    }
+
+    const resetToken = user.createPasswordResetToken();
+    await user.save({ validateBeforeSave: false });
+
+    const resetLink = `${CLIENT_URL}/reset-password?token=${resetToken}`;
+    const resetMinutes = Number(process.env.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES) || 30;
+
+    const html = `
+      <p>Hello ${user.name || ""},</p>
+      <p>You requested to reset your password. Please click the button below to continue:</p>
+      <p><a href="${resetLink}" target="_blank" style="display:inline-block;padding:10px 20px;background-color:#007bff;color:#ffffff;text-decoration:none;border-radius:4px;">Reset Password</a></p>
+      <p>If the button doesn't work, copy and paste this link into your browser:</p>
+      <p><a href="${resetLink}" target="_blank">${resetLink}</a></p>
+      <p>This link is valid for ${resetMinutes} minutes. If you didn't request a password reset, you can safely ignore this email.</p>
+      <p>Thanks,<br/>StorageUp Team</p>
+    `;
+
+    await sendEmail({
+      to: user.email,
+      subject: "Reset your StorageUp password",
+      html,
+      text: `Reset your password using the following link (valid for ${resetMinutes} minutes): ${resetLink}`,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "If an account exists for that email, a reset link has been sent.",
+    });
+  } catch (error) {
+    console.error("Error sending password reset email:", error);
+
+    if (user) {
+      user.clearPasswordResetToken();
+      await user.save({ validateBeforeSave: false });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Unable to process password reset request. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
+// Verify reset token
+export const verifyResetToken = async (req, res) => {
+  const { token } = req.query;
+
+  if (!token) {
+    return res.status(400).json({
+      success: false,
+      message: "Reset token is required.",
+    });
+  }
+
+  try {
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: new Date() },
+    }).select("_id email name roles");
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "The reset link is invalid or has expired. Please request a new one.",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Reset token is valid.",
+      data: {
+        userId: user._id,
+        email: user.email,
+        name: user.name,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Unable to verify reset token.",
+      error: error.message,
+    });
+  }
+};
+
+// Reset password
+export const resetPassword = async (req, res) => {
+  const { token, password, confirmPassword } = req.body;
+
+  if (!token || !password || !confirmPassword) {
+    return res.status(400).json({
+      success: false,
+      message: "Token, password, and confirm password are required.",
+    });
+  }
+
+  if (password !== confirmPassword) {
+    return res.status(400).json({
+      success: false,
+      message: "Passwords do not match.",
+    });
+  }
+
+  try {
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: new Date() },
+    }).select("+passwordResetToken +passwordResetExpires +password");
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "The reset link is invalid or has expired. Please request a new one.",
+      });
+    }
+
+    user.password = password;
+    user.clearPasswordResetToken();
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset successfully. You can now log in with your new password.",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Unable to reset password at this time.",
       error: error.message,
     });
   }

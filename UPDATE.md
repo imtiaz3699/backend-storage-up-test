@@ -1,7 +1,7 @@
 # Project Update - StorageUp Backend
 
 ## Summary
-Implemented complete user management system with CRUD operations and JWT-based authentication with cookie-based token storage.
+Implemented complete user management system with CRUD operations, dual (client/admin) authentication, secure password reset via email links, and admin-managed storage location CRUD.
 
 ## Completed Features
 
@@ -51,6 +51,21 @@ Implemented complete user management system with CRUD operations and JWT-based a
 - **Protect Middleware** - Verifies JWT tokens for protected routes
 - **Authorize Middleware** - Role-based access control (user, admin, moderator)
 
+### 4. Password Reset Workflow
+- **Forgot Password** - POST `/api/auth/forgot-password` sends email reset link
+- **Verify Reset Token** - GET `/api/auth/reset-password/verify` ensures link is valid before showing form
+- **Reset Password** - POST `/api/auth/reset-password` updates password once token is validated
+- Secure tokens stored hashed in DB with expiry (`PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`)
+- Email notifications delivered via SMTP (`utils/emailService.js`) with automatic Ethereal fallback for development environments
+
+### 5. Location Management (Admin)
+- **Create Location** - POST `/api/admin/locations` with detailed address, facilities, and media fields
+- **List Locations** - GET `/api/admin/locations` with pagination metadata
+- **Location Details** - GET `/api/admin/locations/:id`
+- **Update Location** - PUT `/api/admin/locations/:id`
+- **Delete Location** - DELETE `/api/admin/locations/:id`
+- Comprehensive schema includes contact info, map link, facility amenities, operating hours, and gallery images
+
 ## Technical Implementation
 
 ### New Files Created
@@ -62,16 +77,22 @@ Implemented complete user management system with CRUD operations and JWT-based a
 - `routes/adminRoutes.js` - Admin-only protected routes
 - `middleware/authMiddleware.js` - JWT verification and authorization (protect & protectAdmin)
 - `ADMIN_SETUP.md` - Comprehensive admin setup guide
+- `utils/emailService.js` - SMTP email helper for password reset notifications
+- `models/Location.js` - Schema for storage facility locations
+- `controllers/locationController.js` - CRUD operations for locations
 
 ### Dependencies Added
 - `bcrypt` - Password hashing
 - `jsonwebtoken` - JWT token generation/verification
 - `cookie-parser` - Cookie handling middleware
+- `nodemailer` - SMTP email delivery for password reset notifications
 
 ### Configuration Updates
 - Added `JWT_SECRET` environment variable (required)
 - Added `JWT_EXPIRE` environment variable (default: 7d)
 - Added `CLIENT_URL` for CORS configuration
+- Added SMTP configuration variables (`EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`)
+- Added `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` for reset token expiry window
 - Updated CORS to support credentials (for cookies)
 
 ## API Endpoints Summary
@@ -79,6 +100,9 @@ Implemented complete user management system with CRUD operations and JWT-based a
 **Client Authentication:**
 - `POST /api/auth/signup` - User registration (client side)
 - `POST /api/auth/login` - User login (client side only)
+- `POST /api/auth/forgot-password` - Request password reset link
+- `GET /api/auth/reset-password/verify` - Validate reset token
+- `POST /api/auth/reset-password` - Reset password with token
 
 **Admin Authentication:**
 - `POST /api/auth/admin/signup` - Admin registration
@@ -88,12 +112,19 @@ Implemented complete user management system with CRUD operations and JWT-based a
 - `POST /api/auth/logout` - User/Admin logout
 - `GET /api/auth/me` - Get current user (protected)
 
-**Public User Routes:**
-- `POST /api/users` - Create user
-- `GET /api/users` - List all users (with pagination)
-- `GET /api/users/:id` - Get user by ID
-- `PUT /api/users/:id` - Update user
-- `DELETE /api/users/:id` - Delete user
+**Admin Protected User Routes:**
+- `POST /api/users` - Create user (admin only)
+- `GET /api/users` - List all users (admin only, with pagination)
+- `GET /api/users/:id` - Get user by ID (admin only)
+- `PUT /api/users/:id` - Update user (admin only)
+- `DELETE /api/users/:id` - Delete user (admin only)
+
+**Admin Location Routes:**
+- `POST /api/admin/locations` - Create storage location
+- `GET /api/admin/locations` - List locations (with pagination)
+- `GET /api/admin/locations/:id` - Get location by ID
+- `PUT /api/admin/locations/:id` - Update location
+- `DELETE /api/admin/locations/:id` - Delete location
 
 **Admin Routes (Protected):**
 - `GET /api/admin/users` - List all users (admin only, with pagination)
@@ -113,6 +144,7 @@ Implemented complete user management system with CRUD operations and JWT-based a
 ✅ Input validation and error handling
 ✅ Admin-only protected routes with `protectAdmin` middleware
 ✅ Pagination support for user lists
+✅ Secure password reset tokens with email verification and expiry enforcement
 
 ## Next Steps / Recommendations
 1. Set up `.env` file with `JWT_SECRET` before running
@@ -120,7 +152,7 @@ Implemented complete user management system with CRUD operations and JWT-based a
 3. Configure separate frontend apps for client and admin sides
 4. Consider adding rate limiting for authentication endpoints
 5. Add email verification for signup (optional)
-6. Implement password reset functionality (optional)
+6. Configure production-ready SMTP provider (SendGrid, SES, etc.)
 7. Add request validation middleware (e.g., express-validator)
 8. Consider protecting admin signup endpoint in production
 
@@ -147,6 +179,21 @@ Implemented complete user management system with CRUD operations and JWT-based a
 - Admin users **cannot** login via client login endpoint
 - Each side uses separate token cookies
 
+### Testing Password Reset
+1. Request reset link: `POST /api/auth/forgot-password` with a known user email
+2. Copy the `token` value from the email (or logs during development)
+3. Validate the token: `GET /api/auth/reset-password/verify?token=<token>`
+4. Reset password: `POST /api/auth/reset-password` with `{ token, password, confirmPassword }`
+5. Attempt login with new password to confirm success
+
+### Testing Location Management
+1. Authenticate as admin to obtain `adminToken`
+2. Create a location: `POST /api/admin/locations` with full payload
+3. List locations: `GET /api/admin/locations?page=1&limit=10`
+4. Fetch details: `GET /api/admin/locations/:id`
+5. Update record: `PUT /api/admin/locations/:id` with modified fields
+6. Delete record: `DELETE /api/admin/locations/:id`
+
 ## Important Notes
 
 📌 **Two-App Architecture:**
@@ -162,6 +209,7 @@ Implemented complete user management system with CRUD operations and JWT-based a
 📌 **Documentation:**
 - Main API docs: `README.md`
 - Admin setup guide: `ADMIN_SETUP.md`
+- Full endpoint breakdown: `API_REFERENCE.md`
 
 ---
 

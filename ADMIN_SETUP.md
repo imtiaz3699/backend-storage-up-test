@@ -130,6 +130,14 @@ Protected with `protectAdmin` middleware - checks for `adminToken` cookie:
 - Store and send `adminToken` cookie with requests
 - Handle 403 errors (redirect to admin login)
 
+## Password Reset Flow
+- Users trigger `POST /api/auth/forgot-password` with their email address.
+- Backend emails a time-limited reset link: `${CLIENT_URL}/reset-password?token=...`.
+- Frontend should call `GET /api/auth/reset-password/verify?token=...` when the page loads.
+- If the token is valid, show the reset form and submit `POST /api/auth/reset-password` with `{ token, password, confirmPassword }`.
+- Tokens are single-use and expire after `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` (default 30 minutes).
+- Ensure your SMTP credentials are configured so reset emails can be delivered.
+
 ## Example Admin Dashboard Request
 
 ```javascript
@@ -160,6 +168,12 @@ fetch('http://localhost:5000/api/admin/users', {
 - Token expired
 - User deleted from database
 
+## Password Reset (Development Notes)
+- `POST /api/auth/forgot-password` sends a reset link to the user.
+- `GET /api/auth/reset-password/verify?token=...` confirms the token before showing the reset form.
+- `POST /api/auth/reset-password` updates the password.
+- During development, if SMTP credentials are not configured, the backend automatically provisions an Ethereal test inbox. Watch the server console for login details and the preview URL of each message.
+
 ## Environment Variables
 
 Make sure these are set in your `.env` file:
@@ -168,6 +182,13 @@ Make sure these are set in your `.env` file:
 JWT_SECRET=your-very-secure-secret-key-here
 JWT_EXPIRE=7d
 CLIENT_URL=http://localhost:3000
+EMAIL_FROM="StorageUp <no-reply@storageup.com>"
+SMTP_HOST=smtp.yourprovider.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-smtp-username
+SMTP_PASS=your-smtp-password
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
 NODE_ENV=production
 ```
 
