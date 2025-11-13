@@ -7,6 +7,7 @@ import AnalysisCode from './AnalysisCode.js';
 import NoticeSetup from './NoticeSetup.js';
 import NoticeCharge from './NoticeCharge.js';
 import Invoice from './Invoice.js';
+import PaymentMethod from './PaymentMethod.js';
 // import Product from './Product.js';
 
 export {
@@ -18,6 +19,7 @@ export {
   NoticeSetup,
   NoticeCharge,
   Invoice,
+  PaymentMethod,
   // Product
 };
 

@@ -11,6 +11,7 @@ import * as invoiceController from './invoiceController.js';
 import * as userDashboardController from './userDashboardController.js';
 import * as userInvoiceController from './userInvoiceController.js';
 import * as userProfileController from './userProfileController.js';
+import * as paymentMethodController from './paymentMethodController.js';
 // import * as productController from './productController.js';
 
 export {
@@ -26,6 +27,7 @@ export {
   userDashboardController,
   userInvoiceController,
   userProfileController,
+  paymentMethodController,
   // productController
 };
 

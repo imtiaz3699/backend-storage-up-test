@@ -80,6 +80,10 @@ const userSchema = new mongoose.Schema({
   passwordResetExpires: {
     type: Date,
     select: false
+  },
+  stripe_customer_id: {
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true // Adds createdAt and updatedAt fields
