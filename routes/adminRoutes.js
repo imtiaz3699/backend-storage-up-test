@@ -28,6 +28,28 @@ import {
   updateAnalysisCode,
   deleteAnalysisCode
 } from '../controllers/analysisCodeController.js';
+import {
+  createNoticeSetup,
+  getNoticeSetups,
+  getNoticeSetupById,
+  updateNoticeSetup,
+  deleteNoticeSetup
+} from '../controllers/noticeSetupController.js';
+import {
+  createNoticeCharge,
+  getNoticeCharges,
+  getNoticeChargeById,
+  updateNoticeCharge,
+  deleteNoticeCharge
+} from '../controllers/noticeChargeController.js';
+import {
+  createInvoice,
+  getInvoices,
+  getInvoiceById,
+  getInvoiceByInvoiceId,
+  updateInvoice,
+  deleteInvoice
+} from '../controllers/invoiceController.js';
 import { tokenMiddleware, protectAdmin } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -68,6 +90,28 @@ router.get('/analysis-codes', getAnalysisCodes);                // List analysis
 router.get('/analysis-codes/:id', getAnalysisCodeById);         // Get analysis code by ID
 router.put('/analysis-codes/:id', updateAnalysisCode);          // Update analysis code
 router.delete('/analysis-codes/:id', deleteAnalysisCode);       // Delete analysis code
+
+// Admin Notice Setup Management routes
+router.post('/notice-setups', createNoticeSetup);             // Create notice setup
+router.get('/notice-setups', getNoticeSetups);                // List notice setups
+router.get('/notice-setups/:id', getNoticeSetupById);         // Get notice setup by ID
+router.put('/notice-setups/:id', updateNoticeSetup);          // Update notice setup
+router.delete('/notice-setups/:id', deleteNoticeSetup);       // Delete notice setup
+
+// Admin Notice Charge Management routes
+router.post('/notice-charges', createNoticeCharge);             // Create notice charge
+router.get('/notice-charges', getNoticeCharges);                // List notice charges
+router.get('/notice-charges/:id', getNoticeChargeById);         // Get notice charge by ID
+router.put('/notice-charges/:id', updateNoticeCharge);          // Update notice charge
+router.delete('/notice-charges/:id', deleteNoticeCharge);       // Delete notice charge
+
+// Admin Invoice Management routes
+router.post('/invoices', createInvoice);                       // Create invoice
+router.get('/invoices', getInvoices);                           // List invoices
+router.get('/invoices/by-id/:invoiceId', getInvoiceByInvoiceId); // Get invoice by invoice_id
+router.get('/invoices/:id', getInvoiceById);                     // Get invoice by MongoDB ID
+router.put('/invoices/:id', updateInvoice);                     // Update invoice
+router.delete('/invoices/:id', deleteInvoice);                  // Delete invoice
 
 export default router;
 
