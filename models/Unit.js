@@ -77,6 +77,11 @@ const unitSchema = new mongoose.Schema({
     enum: ['vacant', 'rented'],
     default: 'vacant'
   },
+  customer_email: {
+    type: String,
+    trim: true,
+    lowercase: true
+  },
   monthly_rate: {
     type: Number,
     default: 0,

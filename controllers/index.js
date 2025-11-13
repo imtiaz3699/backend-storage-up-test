@@ -8,6 +8,9 @@ import * as analysisCodeController from './analysisCodeController.js';
 import * as noticeSetupController from './noticeSetupController.js';
 import * as noticeChargeController from './noticeChargeController.js';
 import * as invoiceController from './invoiceController.js';
+import * as userDashboardController from './userDashboardController.js';
+import * as userInvoiceController from './userInvoiceController.js';
+import * as userProfileController from './userProfileController.js';
 // import * as productController from './productController.js';
 
 export {
@@ -20,6 +23,9 @@ export {
   noticeSetupController,
   noticeChargeController,
   invoiceController,
+  userDashboardController,
+  userInvoiceController,
+  userProfileController,
   // productController
 };
 

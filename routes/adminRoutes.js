@@ -12,7 +12,9 @@ import {
   getUnits,
   getUnitById,
   updateUnit,
-  deleteUnit
+  deleteUnit,
+  assignUnitToUser,
+  releaseUnit
 } from '../controllers/unitController.js';
 import {
   createUnitType,
@@ -76,6 +78,8 @@ router.get('/units', getUnits);                // List units
 router.get('/units/:id', getUnitById);         // Get unit by ID
 router.put('/units/:id', updateUnit);          // Update unit
 router.delete('/units/:id', deleteUnit);       // Delete unit
+router.post('/units/:unitId/assign', assignUnitToUser);  // Assign/rent unit to user
+router.post('/units/:unitId/release', releaseUnit);     // Release/vacate unit
 
 // Admin Unit Type Management routes
 router.post('/unit-types', createUnitType);             // Create unit type

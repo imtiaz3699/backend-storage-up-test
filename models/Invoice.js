@@ -12,6 +12,11 @@ const invoiceSchema = new mongoose.Schema({
     required: [true, 'Customer name is required'],
     trim: true
   },
+  customer_email: {
+    type: String,
+    trim: true,
+    lowercase: true
+  },
   unit_number: {
     type: String,
     required: [true, 'Unit number is required'],

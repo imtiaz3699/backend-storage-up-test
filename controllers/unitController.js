@@ -213,3 +213,119 @@ export const deleteUnit = async (req, res) => {
     });
   }
 };
+
+// Assign/Rent a unit to a user
+export const assignUnitToUser = async (req, res) => {
+  try {
+    const { unitId } = req.params;
+    const { customer_email } = req.body;
+
+    if (!customer_email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer email is required'
+      });
+    }
+
+    const unit = await Unit.findById(unitId);
+
+    if (!unit) {
+      return res.status(404).json({
+        success: false,
+        message: 'Unit not found'
+      });
+    }
+
+    // Check if unit is already rented to someone else
+    if (unit.unit_is === 'rented' && unit.customer_email && unit.customer_email.toLowerCase() !== customer_email.toLowerCase()) {
+      return res.status(400).json({
+        success: false,
+        message: `Unit is already rented to another customer (${unit.customer_email})`
+      });
+    }
+
+    // Assign unit to user
+    unit.customer_email = customer_email.toLowerCase().trim();
+    unit.unit_is = 'rented';
+    
+    await unit.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Unit assigned to user successfully',
+      data: unit
+    });
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid unit ID'
+      });
+    }
+
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Error assigning unit to user',
+      error: error.message
+    });
+  }
+};
+
+// Release/Vacate a unit (remove user assignment)
+export const releaseUnit = async (req, res) => {
+  try {
+    const { unitId } = req.params;
+
+    const unit = await Unit.findById(unitId);
+
+    if (!unit) {
+      return res.status(404).json({
+        success: false,
+        message: 'Unit not found'
+      });
+    }
+
+    // Release unit
+    unit.customer_email = null;
+    unit.unit_is = 'vacant';
+    
+    await unit.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Unit released successfully',
+      data: unit
+    });
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid unit ID'
+      });
+    }
+
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Error releasing unit',
+      error: error.message
+    });
+  }
+};

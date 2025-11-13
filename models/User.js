@@ -10,6 +10,16 @@ const userSchema = new mongoose.Schema({
     minlength: [2, 'Name must be at least 2 characters long'],
     maxlength: [100, 'Name cannot exceed 100 characters']
   },
+  first_name: {
+    type: String,
+    trim: true,
+    maxlength: [50, 'First name cannot exceed 50 characters']
+  },
+  last_name: {
+    type: String,
+    trim: true,
+    maxlength: [50, 'Last name cannot exceed 50 characters']
+  },
   email: {
     type: String,
     required: [true, 'Email is required'],
@@ -23,6 +33,31 @@ const userSchema = new mongoose.Schema({
     required: [true, 'Phone number is required'],
     trim: true,
     match: [/^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,9}$/, 'Please provide a valid phone number']
+  },
+  address_line_one: {
+    type: String,
+    trim: true,
+    maxlength: [200, 'Address line one cannot exceed 200 characters']
+  },
+  address_line_two: {
+    type: String,
+    trim: true,
+    maxlength: [200, 'Address line two cannot exceed 200 characters']
+  },
+  city: {
+    type: String,
+    trim: true,
+    maxlength: [100, 'City cannot exceed 100 characters']
+  },
+  state_province: {
+    type: String,
+    trim: true,
+    maxlength: [100, 'State/Province cannot exceed 100 characters']
+  },
+  zip_code: {
+    type: String,
+    trim: true,
+    maxlength: [20, 'Zip code cannot exceed 20 characters']
   },
   password: {
     type: String,
