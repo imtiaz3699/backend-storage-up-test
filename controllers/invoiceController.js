@@ -69,23 +69,63 @@ export const createInvoice = async (req, res) => {
 
 export const getInvoices = async (req, res) => {
   try {
+    const { customer_name, status, sortBy } = req.query;
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip = (page - 1) * limit;
 
+    // Build filter query
+    const filter = {};
+    
+    // Filter by customer name (case-insensitive partial match)
+    if (customer_name && customer_name.trim() !== '') {
+      filter.customer_name = { $regex: customer_name.trim(), $options: 'i' };
+    }
+    
+    // Filter by status (exact match, case-insensitive)
+    if (status && status.trim() !== '') {
+      const statusLower = status.trim().toLowerCase();
+      // Validate status is one of the allowed values
+      const allowedStatuses = ['pending', 'paid', 'overdue', 'cancelled'];
+      if (allowedStatuses.includes(statusLower)) {
+        filter.status = statusLower;
+      }
+    }
+
+    // Build sort query
+    let sortQuery = { createdAt: -1 }; // Default: newest first
+    
+    if (sortBy && sortBy.trim() !== '') {
+      const sortByLower = sortBy.trim().toLowerCase();
+      
+      if (sortByLower === 'by_date') {
+        // Sort by issue_date (newest first)
+        sortQuery = { issue_date: -1 };
+      } else if (sortByLower === 'by_status') {
+        // Sort by status alphabetically
+        sortQuery = { status: 1 };
+      }
+      // If invalid sortBy, use default
+    }
+
     const [total, invoices] = await Promise.all([
-      Invoice.countDocuments(),
-      Invoice.find()
+      Invoice.countDocuments(filter),
+      Invoice.find(filter)
         .skip(skip)
         .limit(limit)
-        .sort({ createdAt: -1 })
+        .sort(sortQuery)
     ]);
 
     res.status(200).json({
       success: true,
       count: invoices.length,
       pagination: buildPagination(page, limit, total),
-      data: invoices
+      data: invoices,
+      filter: {
+        ...(customer_name && { customer_name: customer_name.trim() }),
+        ...(status && { status: status.trim().toLowerCase() }),
+        ...(sortBy && { sortBy: sortBy.trim().toLowerCase() })
+      }
     });
   } catch (error) {
     res.status(500).json({

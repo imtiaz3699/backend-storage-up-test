@@ -5,22 +5,38 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import routes from './routes/index.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 const app = express();
 
 // Middleware
-app.use(helmet());
+// Configure Helmet to work with CORS
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false
+}));
+// CORS configuration - Allow all origins (especially for localhost development)
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true // Allow cookies to be sent
+  origin: true, // Allow all origins
+  credentials: true, // Allow cookies to be sent
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
 }));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Serve uploaded files statically
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/storageup';
@@ -75,9 +91,32 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Log email configuration status and initialize
+  const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const smtpPass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD || process.env.EMAIL_PASSWORD;
+  if (process.env.SMTP_HOST && smtpUser && smtpPass) {
+    console.log(`📧 Email service configured: ${process.env.SMTP_HOST}`);
+    console.log(`📧 Email from: ${process.env.EMAIL_FROM || 'Not set'}`);
+    
+    // Initialize email service on startup to catch configuration errors early
+    try {
+      const { sendEmail } = await import('./utils/emailService.js');
+      // Trigger initialization by calling initTransporter (it will be cached)
+      console.log(`📧 Initializing email service...`);
+      // The transporter will be initialized on first use, but we log the config here
+    } catch (error) {
+      console.error(`📧 ⚠️  Email service initialization error:`, error.message);
+    }
+  } else {
+    console.log(`📧 ⚠️  Email service not configured - will use Ethereal test account`);
+    console.log(`📧 To configure Gmail, add SMTP_HOST, SMTP_USER, and SMTP_PASS to .env`);
+  }
 });
+
+
 
 

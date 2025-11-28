@@ -14,7 +14,8 @@ import {
   updateUnit,
   deleteUnit,
   assignUnitToUser,
-  releaseUnit
+  releaseUnit,
+  searchUnits
 } from '../controllers/unitController.js';
 import {
   createUnitType,
@@ -74,6 +75,7 @@ router.delete('/locations/:id', deleteLocation);// Delete location
 
 // Admin Unit Management routes
 router.post('/units', createUnit);             // Create unit
+router.get('/units/search', searchUnits);       // Search units by unit number (for dropdown)
 router.get('/units', getUnits);                // List units
 router.get('/units/:id', getUnitById);         // Get unit by ID
 router.put('/units/:id', updateUnit);          // Update unit

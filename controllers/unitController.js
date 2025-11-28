@@ -88,6 +88,56 @@ export const getUnits = async (req, res) => {
   }
 };
 
+// Search units by unit number (for dropdown/autocomplete)
+export const searchUnits = async (req, res) => {
+  try {
+    const { q, limit: limitParam } = req.query;
+    
+    // Validate search query
+    if (!q || q.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required. Please provide a unit number to search.',
+      });
+    }
+
+    const searchTerm = q.trim();
+    const limit = parseInt(limitParam, 10) || 20; // Default 20 results for dropdown
+    
+    // Build search filter - case-insensitive partial match on unit_number
+    const filter = {
+      unit_number: { $regex: searchTerm, $options: 'i' }
+    };
+
+    // Search units and return minimal data for dropdown
+    const units = await Unit.find(filter)
+      .select('_id unit_number location unit_is monthly_rate customer_email')
+      .limit(limit)
+      .sort({ unit_number: 1 }); // Sort alphabetically by unit number
+
+    res.status(200).json({
+      success: true,
+      count: units.length,
+      query: searchTerm,
+      data: units.map(unit => ({
+        _id: unit._id,
+        unit_number: unit.unit_number,
+        location: unit.location,
+        unit_is: unit.unit_is,
+        monthly_rate: unit.monthly_rate,
+        customer_email: unit.customer_email,
+        displayText: `${unit.unit_number}${unit.location ? ` - ${unit.location}` : ''}${unit.unit_is === 'rented' ? ' (Rented)' : ' (Vacant)'}`
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error searching units',
+      error: error.message
+    });
+  }
+};
+
 export const getUnitById = async (req, res) => {
   try {
     const unit = await Unit.findById(req.params.id);

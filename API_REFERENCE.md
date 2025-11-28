@@ -1451,6 +1451,1174 @@ This document contains all API endpoints, request payloads, and response example
 
 ---
 
+### 34. Create Analysis Code (Admin)
+**Create a new analysis code**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/admin/analysis-codes`
+- **Description:** Creates a new accounting analysis code. Admin access required.
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:**
+  ```json
+  {
+    "analysis_code": "LATEFEE",
+    "sort_order": 1,
+    "gl_acct_code": "GL1001",
+    "description": "Late fee charges",
+    "analysis_code_options": {
+      "use_this_code": true,
+      "available_for_sales": true,
+      "taxable": false,
+      "bill_on_move_in": false,
+      "bill_on_move_out": true,
+      "show_as_other_regular_charges": true,
+      "show_code": "LF",
+      "everywhere": "All",
+      "keys_stats_category": "Fees",
+      "analysis_category": "Late Fees",
+      "special_options": "Notify accounting"
+    },
+    "analysis_code_setup": {
+      "default_sell_amount": 25,
+      "minimum_sell_amount": 10,
+      "maximum_sell_amount": 50,
+      "credit_percentage": 5,
+      "standard_code_price": 20
+    },
+    "stock_control_settings": {
+      "enable_online": false,
+      "enable_stock_control": false
+    }
+  }
+  ```
+  - **Note:** `analysis_code` and `gl_acct_code` are automatically stored in uppercase
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Analysis code created successfully",
+    "data": {
+      "_id": "64fb80cf3d9e1a0012345678",
+      "analysis_code": "LATEFEE",
+      "sort_order": 1,
+      "gl_acct_code": "GL1001",
+      "description": "Late fee charges",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+- **Error (400 Bad Request):** If analysis_code already exists
+  ```json
+  {
+    "success": false,
+    "message": "Analysis code must be unique"
+  }
+  ```
+
+---
+
+### 35. Get Analysis Codes (Admin)
+**Get paginated list of analysis codes**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/analysis-codes`
+- **Description:** Returns paginated list of all analysis codes. Admin access required.
+- **Query Parameters:** `page`, `limit`
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "count": 5,
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 1,
+      "totalItems": 5,
+      "limit": 10,
+      "hasNextPage": false,
+      "hasPrevPage": false,
+      "nextPage": null,
+      "prevPage": null
+    },
+    "data": [
+      {
+        "_id": "64fb80cf3d9e1a0012345678",
+        "analysis_code": "LATEFEE",
+        "sort_order": 1,
+        "gl_acct_code": "GL1001",
+        "description": "Late fee charges",
+        "createdAt": "2024-01-01T00:00:00.000Z",
+        "updatedAt": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 36. Get Analysis Code by ID (Admin)
+**Get analysis code details**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/analysis-codes/:id`
+- **Description:** Returns an analysis code by ID. Admin access required.
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "64fb80cf3d9e1a0012345678",
+      "analysis_code": "LATEFEE",
+      "sort_order": 1,
+      "gl_acct_code": "GL1001",
+      "description": "Late fee charges",
+      "analysis_code_options": {
+        "use_this_code": true,
+        "available_for_sales": true,
+        "taxable": false
+      },
+      "analysis_code_setup": {
+        "default_sell_amount": 25,
+        "minimum_sell_amount": 10,
+        "maximum_sell_amount": 50
+      },
+      "stock_control_settings": {
+        "enable_online": false,
+        "enable_stock_control": false
+      },
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 37. Update Analysis Code (Admin)
+**Update an analysis code**
+
+- **Method:** `PUT`
+- **Endpoint:** `/api/admin/analysis-codes/:id`
+- **Description:** Updates an analysis code configuration. Admin access required.
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:** Any subset of analysis code fields
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Analysis code updated successfully",
+    "data": {
+      "_id": "64fb80cf3d9e1a0012345678",
+      "analysis_code": "LATEFEE",
+      "description": "Updated description",
+      "updatedAt": "2024-01-05T10:15:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 38. Delete Analysis Code (Admin)
+**Delete an analysis code**
+
+- **Method:** `DELETE`
+- **Endpoint:** `/api/admin/analysis-codes/:id`
+- **Description:** Deletes an analysis code by ID. Admin access required.
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Analysis code deleted successfully",
+    "data": {}
+  }
+  ```
+
+---
+
+### 39. Assign Unit to User (Admin)
+**Assign/rent a unit to a user**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/admin/units/:unitId/assign`
+- **Description:** Assigns a unit to a user by setting customer_email and marking as rented. Admin access required.
+- **URL Parameters:**
+  - `unitId` - Unit MongoDB ObjectId
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:**
+  ```json
+  {
+    "customer_email": "john@example.com"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Unit assigned to user successfully",
+    "data": {
+      "_id": "64f96f3f5c1d2b7f8c654321",
+      "unit_number": "A001",
+      "customer_email": "john@example.com",
+      "unit_is": "rented",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  }
+  ```
+- **Error (400 Bad Request):** If unit is already rented to another user
+  ```json
+  {
+    "success": false,
+    "message": "Unit is already rented to another customer (jane@example.com)"
+  }
+  ```
+
+---
+
+### 40. Release Unit (Admin)
+**Release/vacate a unit**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/admin/units/:unitId/release`
+- **Description:** Releases a unit by clearing customer_email and marking as vacant. Admin access required.
+- **URL Parameters:**
+  - `unitId` - Unit MongoDB ObjectId
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:** None
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Unit released successfully",
+    "data": {
+      "_id": "64f96f3f5c1d2b7f8c654321",
+      "unit_number": "A001",
+      "customer_email": null,
+      "unit_is": "vacant",
+      "updatedAt": "2024-01-15T11:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 41. Create Notice Setup (Admin)
+**Create a new notice setup**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/admin/notice-setups`
+- **Description:** Creates a new notice plan configuration. Admin access required.
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:**
+  ```json
+  {
+    "notice_plan_number": 10,
+    "name_of_this_notice": "Late Payment Notice",
+    "send_this_notice": 5,
+    "before_after": "after",
+    "late_cycle_start_date": "2024-01-15T00:00:00.000Z",
+    "notice_options": {
+      "send_this_notice": true,
+      "print_this_notice": false,
+      "dont_need_this": false,
+      "only_send_one": true,
+      "only_send_this": false,
+      "bill_next_rent": false,
+      "dont_send_this_notice": false,
+      "bill_fees_only": false,
+      "exclude_from_late_cycle": false,
+      "hide_notice": false,
+      "use_the_days": true,
+      "attach_statement": "statement.pdf",
+      "new_attach_a_statement": "new_statement.pdf"
+    },
+    "access_control_triggers": {
+      "suspend_customer_access": false,
+      "flag_for_replacement": false,
+      "flag_for_over_lock": true
+    }
+  }
+  ```
+  - **Note:** `before_after` must be either `"before"` or `"after"`
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Notice setup created successfully",
+    "data": {
+      "_id": "64fc90df4e0f2b0012345678",
+      "notice_plan_number": 10,
+      "name_of_this_notice": "Late Payment Notice",
+      "send_this_notice": 5,
+      "before_after": "after",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 42. Get Notice Setups (Admin)
+**Get paginated list of notice setups**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/notice-setups`
+- **Description:** Returns paginated list of all notice setups. Admin access required.
+- **Query Parameters:** `page`, `limit`
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "count": 3,
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 1,
+      "totalItems": 3,
+      "limit": 10,
+      "hasNextPage": false,
+      "hasPrevPage": false,
+      "nextPage": null,
+      "prevPage": null
+    },
+    "data": [
+      {
+        "_id": "64fc90df4e0f2b0012345678",
+        "notice_plan_number": 10,
+        "name_of_this_notice": "Late Payment Notice",
+        "createdAt": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 43. Get Notice Setup by ID (Admin)
+**Get notice setup details**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/notice-setups/:id`
+- **Description:** Returns a notice setup by ID. Admin access required.
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "64fc90df4e0f2b0012345678",
+      "notice_plan_number": 10,
+      "name_of_this_notice": "Late Payment Notice",
+      "send_this_notice": 5,
+      "before_after": "after",
+      "late_cycle_start_date": "2024-01-15T00:00:00.000Z",
+      "notice_options": {
+        "send_this_notice": true,
+        "print_this_notice": false
+      },
+      "access_control_triggers": {
+        "suspend_customer_access": false,
+        "flag_for_replacement": false,
+        "flag_for_over_lock": true
+      },
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 44. Update Notice Setup (Admin)
+**Update a notice setup**
+
+- **Method:** `PUT`
+- **Endpoint:** `/api/admin/notice-setups/:id`
+- **Description:** Updates a notice setup configuration. Admin access required.
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:** Any subset of notice setup fields
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Notice setup updated successfully",
+    "data": {
+      "_id": "64fc90df4e0f2b0012345678",
+      "name_of_this_notice": "Updated Notice Name",
+      "updatedAt": "2024-01-05T10:15:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 45. Delete Notice Setup (Admin)
+**Delete a notice setup**
+
+- **Method:** `DELETE`
+- **Endpoint:** `/api/admin/notice-setups/:id`
+- **Description:** Deletes a notice setup by ID. Admin access required.
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Notice setup deleted successfully",
+    "data": {}
+  }
+  ```
+
+---
+
+### 46. Create Notice Charge (Admin)
+**Create a new notice charge configuration**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/admin/notice-charges`
+- **Description:** Creates a new notice charge system configuration. Admin access required.
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:**
+  ```json
+  {
+    "simplified_charge_system": false,
+    "minimum_charge": 10,
+    "minimum_percentage": 10,
+    "tiered_charge_system": false,
+    "fee_options": {
+      "notice_trigger": false,
+      "fee_on_one_month": false,
+      "charge_is_per_unit": false,
+      "analysis_code": "Late fees"
+    },
+    "invoice_fee": {
+      "fee_to_charge": 10,
+      "analysis_code": "INV001"
+    }
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Notice charge created successfully",
+    "data": {
+      "_id": "64fd91ef5f0g3c0012345678",
+      "simplified_charge_system": false,
+      "minimum_charge": 10,
+      "minimum_percentage": 10,
+      "tiered_charge_system": false,
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 47. Get Notice Charges (Admin)
+**Get paginated list of notice charges**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/notice-charges`
+- **Description:** Returns paginated list of all notice charges. Admin access required.
+- **Query Parameters:** `page`, `limit`
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "count": 2,
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 1,
+      "totalItems": 2,
+      "limit": 10,
+      "hasNextPage": false,
+      "hasPrevPage": false,
+      "nextPage": null,
+      "prevPage": null
+    },
+    "data": [
+      {
+        "_id": "64fd91ef5f0g3c0012345678",
+        "simplified_charge_system": false,
+        "minimum_charge": 10,
+        "createdAt": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 48. Get Notice Charge by ID (Admin)
+**Get notice charge details**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/notice-charges/:id`
+- **Description:** Returns a notice charge by ID. Admin access required.
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "64fd91ef5f0g3c0012345678",
+      "simplified_charge_system": false,
+      "minimum_charge": 10,
+      "minimum_percentage": 10,
+      "tiered_charge_system": false,
+      "fee_options": {
+        "notice_trigger": false,
+        "fee_on_one_month": false,
+        "charge_is_per_unit": false,
+        "analysis_code": "Late fees"
+      },
+      "invoice_fee": {
+        "fee_to_charge": 10,
+        "analysis_code": "INV001"
+      },
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 49. Update Notice Charge (Admin)
+**Update a notice charge**
+
+- **Method:** `PUT`
+- **Endpoint:** `/api/admin/notice-charges/:id`
+- **Description:** Updates a notice charge configuration. Admin access required.
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:** Any subset of notice charge fields
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Notice charge updated successfully",
+    "data": {
+      "_id": "64fd91ef5f0g3c0012345678",
+      "minimum_charge": 15,
+      "updatedAt": "2024-01-05T10:15:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 50. Delete Notice Charge (Admin)
+**Delete a notice charge**
+
+- **Method:** `DELETE`
+- **Endpoint:** `/api/admin/notice-charges/:id`
+- **Description:** Deletes a notice charge by ID. Admin access required.
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Notice charge deleted successfully",
+    "data": {}
+  }
+  ```
+
+---
+
+### 51. Create Invoice (Admin)
+**Create a new invoice**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/admin/invoices`
+- **Description:** Creates a new invoice. Invoice ID is auto-generated if not provided (INV_001, INV_002, etc.). Admin access required.
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:**
+  ```json
+  {
+    "invoice_id": "",
+    "customer_name": "John Doe",
+    "customer_email": "john@example.com",
+    "unit_number": "UNIT-001",
+    "amount": 1500.00,
+    "issue_date": "2024-01-15T00:00:00.000Z",
+    "due_date": "2024-02-15T00:00:00.000Z",
+    "status": "pending"
+  }
+  ```
+  - **Note:** `invoice_id` is optional. If empty or not provided, it will be auto-generated (INV_001, INV_002, etc.)
+  - **Note:** `status` must be one of: `pending`, `paid`, `overdue`, `cancelled` (default: `pending`)
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Invoice created successfully",
+    "data": {
+      "_id": "64fe92ff6g1h4d0012345678",
+      "invoice_id": "INV_001",
+      "customer_name": "John Doe",
+      "customer_email": "john@example.com",
+      "unit_number": "UNIT-001",
+      "amount": 1500.00,
+      "issue_date": "2024-01-15T00:00:00.000Z",
+      "due_date": "2024-02-15T00:00:00.000Z",
+      "status": "pending",
+      "createdAt": "2024-01-15T00:00:00.000Z",
+      "updatedAt": "2024-01-15T00:00:00.000Z"
+    }
+  }
+  ```
+- **Error (400 Bad Request):** If invoice_id is already taken
+  ```json
+  {
+    "success": false,
+    "message": "Invoice ID must be unique"
+  }
+  ```
+
+---
+
+### 52. Get Invoices (Admin)
+**Get paginated list of invoices**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/invoices`
+- **Description:** Returns paginated list of all invoices. Admin access required.
+- **Query Parameters:** `page`, `limit`
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "count": 10,
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 3,
+      "totalItems": 25,
+      "limit": 10,
+      "hasNextPage": true,
+      "hasPrevPage": false,
+      "nextPage": 2,
+      "prevPage": null
+    },
+    "data": [
+      {
+        "_id": "64fe92ff6g1h4d0012345678",
+        "invoice_id": "INV_001",
+        "customer_name": "John Doe",
+        "customer_email": "john@example.com",
+        "unit_number": "UNIT-001",
+        "amount": 1500.00,
+        "status": "pending",
+        "createdAt": "2024-01-15T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 53. Get Invoice by ID (Admin)
+**Get invoice by MongoDB ID**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/invoices/:id`
+- **Description:** Returns an invoice by MongoDB ObjectId. Admin access required.
+- **URL Parameters:**
+  - `id` - Invoice MongoDB ObjectId
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "64fe92ff6g1h4d0012345678",
+      "invoice_id": "INV_001",
+      "customer_name": "John Doe",
+      "customer_email": "john@example.com",
+      "unit_number": "UNIT-001",
+      "amount": 1500.00,
+      "issue_date": "2024-01-15T00:00:00.000Z",
+      "due_date": "2024-02-15T00:00:00.000Z",
+      "status": "pending",
+      "createdAt": "2024-01-15T00:00:00.000Z",
+      "updatedAt": "2024-01-15T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 54. Get Invoice by Invoice ID (Admin)
+**Get invoice by invoice_id**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/admin/invoices/by-id/:invoiceId`
+- **Description:** Returns an invoice by its invoice_id (e.g., INV_001). Admin access required.
+- **URL Parameters:**
+  - `invoiceId` - Invoice ID (e.g., "INV_001")
+- **Example:** `/api/admin/invoices/by-id/INV_001`
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "64fe92ff6g1h4d0012345678",
+      "invoice_id": "INV_001",
+      "customer_name": "John Doe",
+      "customer_email": "john@example.com",
+      "unit_number": "UNIT-001",
+      "amount": 1500.00,
+      "status": "pending",
+      "createdAt": "2024-01-15T00:00:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 55. Update Invoice (Admin)
+**Update an invoice**
+
+- **Method:** `PUT`
+- **Endpoint:** `/api/admin/invoices/:id`
+- **Description:** Updates an invoice. Admin access required.
+- **URL Parameters:**
+  - `id` - Invoice MongoDB ObjectId
+- **Headers:** `Content-Type: application/json`, `Authorization: Bearer <adminToken>` or cookie
+- **Request Body:** Any subset of invoice fields
+  ```json
+  {
+    "status": "paid",
+    "amount": 1600.00
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Invoice updated successfully",
+    "data": {
+      "_id": "64fe92ff6g1h4d0012345678",
+      "invoice_id": "INV_001",
+      "status": "paid",
+      "amount": 1600.00,
+      "updatedAt": "2024-01-20T10:15:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 56. Delete Invoice (Admin)
+**Delete an invoice**
+
+- **Method:** `DELETE`
+- **Endpoint:** `/api/admin/invoices/:id`
+- **Description:** Deletes an invoice by ID. Admin access required.
+- **URL Parameters:**
+  - `id` - Invoice MongoDB ObjectId
+- **Headers:** `Authorization: Bearer <adminToken>` or cookie
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Invoice deleted successfully",
+    "data": {}
+  }
+  ```
+
+---
+
+## 👤 Client-Side APIs (Protected)
+
+**Note:** All client routes require authentication with `token` cookie or `Authorization: Bearer <token>` header. Only users with 'user' role can access these endpoints.
+
+### 57. Get My Rentals
+**Get user's rented units dashboard**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/client/my-rentals`
+- **Description:** Returns the authenticated user's rented units with summary statistics. Only shows units where customer_email matches user's email and unit_is is 'rented'.
+- **Query Parameters:**
+  - `page` (optional, default: 1) - Page number
+  - `limit` (optional, default: 10) - Items per page
+- **Headers:**
+  ```json
+  {
+    "Authorization": "Bearer <token>"
+  }
+  ```
+  OR
+  - Cookie: `token`
+- **Request Body:** None
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "user": {
+        "id": "507f1f77bcf86cd799439011",
+        "name": "John Doe",
+        "email": "john@example.com",
+        "phoneNumber": "+1234567890",
+        "roles": ["user"],
+        "createdAt": "2024-01-01T00:00:00.000Z",
+        "updatedAt": "2024-01-01T00:00:00.000Z"
+      },
+      "summary": {
+        "totalUnits": 3,
+        "totalMonthlyCost": 4500,
+        "totalSquareFeet": 300.5
+      },
+      "units": [
+        {
+          "_id": "64f96f3f5c1d2b7f8c654321",
+          "unit_number": "UNIT-001",
+          "location": "DT-001",
+          "monthly_rate": 1500,
+          "dimensions": {
+            "area_size": "100FQ"
+          },
+          "unit_is": "rented",
+          "customer_email": "john@example.com"
+        }
+      ],
+      "pagination": {
+        "currentPage": 1,
+        "totalPages": 1,
+        "totalItems": 3,
+        "limit": 10,
+        "hasNextPage": false,
+        "hasPrevPage": false,
+        "nextPage": null,
+        "prevPage": null
+      }
+    }
+  }
+  ```
+
+---
+
+### 58. Get My Invoices
+**Get user's invoices with summary**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/client/my-invoices`
+- **Description:** Returns the authenticated user's invoices with counts and monthly summary. Matches invoices by customer_email or customer_name.
+- **Query Parameters:**
+  - `page` (optional, default: 1) - Page number
+  - `limit` (optional, default: 10) - Items per page
+- **Headers:**
+  ```json
+  {
+    "Authorization": "Bearer <token>"
+  }
+  ```
+  OR
+  - Cookie: `token`
+- **Request Body:** None
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "total_invoices": 25,
+      "paid_invoices": 15,
+      "un_paid_invoices": 8,
+      "over_due_invoices": 2,
+      "monthly_invoice_summary": {
+        "total_generated": 15000,
+        "total_collected": 12000,
+        "outstanding": 3000
+      },
+      "invoices": [
+        {
+          "_id": "64fe92ff6g1h4d0012345678",
+          "invoice_id": "INV_001",
+          "customer_name": "John Doe",
+          "customer_email": "john@example.com",
+          "unit_number": "UNIT-001",
+          "amount": 1500.00,
+          "issue_date": "2024-01-15T00:00:00.000Z",
+          "due_date": "2024-02-15T00:00:00.000Z",
+          "status": "paid",
+          "createdAt": "2024-01-15T00:00:00.000Z"
+        }
+      ],
+      "pagination": {
+        "currentPage": 1,
+        "totalPages": 3,
+        "totalItems": 25,
+        "limit": 10,
+        "hasNextPage": true,
+        "hasPrevPage": false,
+        "nextPage": 2,
+        "prevPage": null
+      }
+    }
+  }
+  ```
+
+---
+
+### 59. Update Profile
+**Update user profile information**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/client/profile`
+- **Description:** Updates the authenticated user's profile. All fields are optional - only send fields you want to update.
+- **Headers:**
+  ```json
+  {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer <token>"
+  }
+  ```
+  OR
+  - Cookie: `token`
+- **Request Body:** (All fields optional)
+  ```json
+  {
+    "first_name": "John",
+    "last_name": "Doe",
+    "email_address": "john@example.com",
+    "phoneNumber": "+1234567890",
+    "address_line_one": "123 Main Street",
+    "address_line_two": "Apt 4B",
+    "city": "New York",
+    "state_province": "NY",
+    "zip_code": "10001"
+  }
+  ```
+  - **Note:** `email_address` maps to `email` in the database. If changed, must be unique.
+  - **Note:** `name` field is automatically updated from `first_name` and `last_name` if provided.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Profile updated successfully",
+    "data": {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "first_name": "John",
+      "last_name": "Doe",
+      "email": "john@example.com",
+      "phoneNumber": "+1234567890",
+      "address_line_one": "123 Main Street",
+      "address_line_two": "Apt 4B",
+      "city": "New York",
+      "state_province": "NY",
+      "zip_code": "10001",
+      "roles": ["user"],
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-15T00:00:00.000Z"
+    }
+  }
+  ```
+- **Error (400 Bad Request):** If email is already taken
+  ```json
+  {
+    "success": false,
+    "message": "Email address is already in use"
+  }
+  ```
+
+---
+
+### 60. Add Payment Method
+**Add a payment method via Stripe**
+
+- **Method:** `POST`
+- **Endpoint:** `/api/client/payment-methods`
+- **Description:** Adds a payment method for the authenticated user. Supports two methods: PaymentMethod ID (recommended) or card details (requires Raw Card Data APIs enabled).
+- **Headers:**
+  ```json
+  {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer <token>"
+  }
+  ```
+  OR
+  - Cookie: `token`
+- **Request Body (Option 1 - Recommended):**
+  ```json
+  {
+    "payment_method_id": "pm_1234567890abcdef"
+  }
+  ```
+  - **Note:** Create PaymentMethod on frontend using Stripe Elements, then send the ID.
+- **Request Body (Option 2 - Requires Raw Card Data APIs):**
+  ```json
+  {
+    "card_number": "4242424242424242",
+    "expiration_date": "12/25",
+    "cv": "123",
+    "card_holder_name": "John Doe"
+  }
+  ```
+  - **Note:** `expiration_date` format: `MM/YY` or `MM/YYYY`
+  - **Note:** Requires "Raw card data APIs" to be enabled in Stripe Dashboard
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Payment method added successfully",
+    "data": {
+      "_id": "64ff93gg7h2i5e0012345678",
+      "user": "507f1f77bcf86cd799439011",
+      "stripe_payment_method_id": "pm_1234567890abcdef",
+      "stripe_customer_id": "cus_xxxxx",
+      "card_brand": "visa",
+      "card_last4": "4242",
+      "card_exp_month": 12,
+      "card_exp_year": 2025,
+      "card_holder_name": "John Doe",
+      "is_default": true,
+      "is_active": true,
+      "createdAt": "2024-01-15T00:00:00.000Z",
+      "updatedAt": "2024-01-15T00:00:00.000Z"
+    }
+  }
+  ```
+- **Error (400 Bad Request):** If raw card data APIs are not enabled
+  ```json
+  {
+    "success": false,
+    "message": "Raw card data APIs are not enabled in your Stripe account. Please use one of the following options:",
+    "error": "RAW_CARD_DATA_DISABLED",
+    "solutions": [
+      {
+        "method": "Use Stripe Elements (Recommended)",
+        "description": "Create a PaymentMethod on the frontend using Stripe Elements, then send the payment_method_id to this endpoint",
+        "documentation": "https://stripe.com/docs/stripe-js"
+      },
+      {
+        "method": "Enable Raw Card Data APIs",
+        "description": "Enable this feature in your Stripe Dashboard (requires approval)",
+        "documentation": "https://support.stripe.com/questions/enabling-access-to-raw-card-data-apis"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 61. Get Payment Methods
+**Get all user's payment methods**
+
+- **Method:** `GET`
+- **Endpoint:** `/api/client/payment-methods`
+- **Description:** Returns all active payment methods for the authenticated user. Default payment method is listed first.
+- **Headers:**
+  ```json
+  {
+    "Authorization": "Bearer <token>"
+  }
+  ```
+  OR
+  - Cookie: `token`
+- **Request Body:** None
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "_id": "64ff93gg7h2i5e0012345678",
+        "stripe_payment_method_id": "pm_1234567890abcdef",
+        "card_brand": "visa",
+        "card_last4": "4242",
+        "card_exp_month": 12,
+        "card_exp_year": 2025,
+        "card_holder_name": "John Doe",
+        "is_default": true,
+        "is_active": true,
+        "createdAt": "2024-01-15T00:00:00.000Z"
+      },
+      {
+        "_id": "64ff94hh8i3j6f0012345679",
+        "stripe_payment_method_id": "pm_abcdef1234567890",
+        "card_brand": "mastercard",
+        "card_last4": "5555",
+        "card_exp_month": 6,
+        "card_exp_year": 2026,
+        "card_holder_name": "John Doe",
+        "is_default": false,
+        "is_active": true,
+        "createdAt": "2024-01-20T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 62. Set Default Payment Method
+**Set a payment method as default**
+
+- **Method:** `PUT`
+- **Endpoint:** `/api/client/payment-methods/:paymentMethodId/default`
+- **Description:** Sets a payment method as the default. Only one default payment method per user.
+- **URL Parameters:**
+  - `paymentMethodId` - PaymentMethod MongoDB ObjectId
+- **Headers:**
+  ```json
+  {
+    "Authorization": "Bearer <token>"
+  }
+  ```
+  OR
+  - Cookie: `token`
+- **Request Body:** None
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Default payment method updated successfully",
+    "data": {
+      "_id": "64ff94hh8i3j6f0012345679",
+      "is_default": true,
+      "updatedAt": "2024-01-25T10:30:00.000Z"
+    }
+  }
+  ```
+
+---
+
+### 63. Delete Payment Method
+**Delete a payment method**
+
+- **Method:** `DELETE`
+- **Endpoint:** `/api/client/payment-methods/:paymentMethodId`
+- **Description:** Deletes a payment method (soft delete - marks as inactive and detaches from Stripe).
+- **URL Parameters:**
+  - `paymentMethodId` - PaymentMethod MongoDB ObjectId
+- **Headers:**
+  ```json
+  {
+    "Authorization": "Bearer <token>"
+  }
+  ```
+  OR
+  - Cookie: `token`
+- **Request Body:** None
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Payment method deleted successfully",
+    "data": {}
+  }
+  ```
+
+---
+
 ## 📊 System APIs
 
 ### 16. Health Check
@@ -1585,6 +2753,13 @@ fetch('http://localhost:5000/api/auth/me', {
 - `POST /api/auth/forgot-password` - Request password reset
 - `GET /api/auth/reset-password/verify` - Validate reset token
 - `POST /api/auth/reset-password` - Reset password
+- `GET /api/client/my-rentals` - Get user's rented units (with pagination)
+- `GET /api/client/my-invoices` - Get user's invoices (with pagination)
+- `POST /api/client/profile` - Update user profile
+- `POST /api/client/payment-methods` - Add payment method
+- `GET /api/client/payment-methods` - Get all payment methods
+- `PUT /api/client/payment-methods/:paymentMethodId/default` - Set default payment method
+- `DELETE /api/client/payment-methods/:paymentMethodId` - Delete payment method
 
 ### Admin App Endpoints
 - `POST /api/auth/admin/signup` - Register admin
@@ -1619,6 +2794,24 @@ fetch('http://localhost:5000/api/auth/me', {
 - `GET /api/admin/analysis-codes/:id` - Get analysis code
 - `PUT /api/admin/analysis-codes/:id` - Update analysis code
 - `DELETE /api/admin/analysis-codes/:id` - Delete analysis code
+- `POST /api/admin/units/:unitId/assign` - Assign unit to user
+- `POST /api/admin/units/:unitId/release` - Release unit
+- `POST /api/admin/notice-setups` - Create notice setup
+- `GET /api/admin/notice-setups` - List notice setups
+- `GET /api/admin/notice-setups/:id` - Get notice setup
+- `PUT /api/admin/notice-setups/:id` - Update notice setup
+- `DELETE /api/admin/notice-setups/:id` - Delete notice setup
+- `POST /api/admin/notice-charges` - Create notice charge
+- `GET /api/admin/notice-charges` - List notice charges
+- `GET /api/admin/notice-charges/:id` - Get notice charge
+- `PUT /api/admin/notice-charges/:id` - Update notice charge
+- `DELETE /api/admin/notice-charges/:id` - Delete notice charge
+- `POST /api/admin/invoices` - Create invoice
+- `GET /api/admin/invoices` - List invoices
+- `GET /api/admin/invoices/:id` - Get invoice by MongoDB ID
+- `GET /api/admin/invoices/by-id/:invoiceId` - Get invoice by invoice_id
+- `PUT /api/admin/invoices/:id` - Update invoice
+- `DELETE /api/admin/invoices/:id` - Delete invoice
 
 ---
 
