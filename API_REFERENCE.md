@@ -1,4 +1,4 @@
-- **Note:** `type_code` values are stored uppercase automatically
+<!-- - **Note:** `type_code` values are stored uppercase automatically
 # Complete API Reference
 
 This document contains all API endpoints, request payloads, and response examples for the StorageUp Backend.
@@ -2818,4 +2818,4 @@ fetch('http://localhost:5000/api/auth/me', {
 **Base URL:** `http://localhost:5000` (or your server URL)
 
 **All timestamps are in ISO 8601 format (UTC)**
-
+ -->
