@@ -16,19 +16,40 @@ dotenv.config();
 
 const app = express();
 
-// Middleware
-// Configure Helmet to work with CORS
+// CORS configuration - MUST be before other middleware
+// Allow all origins (for both development and production)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  
+  // Set CORS headers for all requests
+  res.header('Access-Control-Allow-Origin', origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, X-CSRF-Token');
+  res.header('Access-Control-Expose-Headers', 'Content-Range, X-Content-Range');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  
+  next();
+});
+
+// Configure Helmet to work with CORS (after CORS middleware)
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false // Disable CSP to avoid conflicts
 }));
-// CORS configuration - Allow all origins (for both development and production)
+
+// Also use cors package as backup
 app.use(cors({
   origin: function (origin, callback) {
     // Allow all origins
     callback(null, true);
   },
-  credentials: true, // Allow cookies to be sent
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
   allowedHeaders: [
     'Content-Type', 
@@ -44,15 +65,6 @@ app.use(cors({
   preflightContinue: false,
   optionsSuccessStatus: 204
 }));
-
-// Handle preflight requests explicitly for all routes
-app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, X-CSRF-Token');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.sendStatus(204);
-});
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
