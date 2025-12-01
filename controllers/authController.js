@@ -85,7 +85,7 @@ export const signup = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
+      
     // Validation
     if (!email || !password) {
       return res.status(400).json({
@@ -93,43 +93,35 @@ export const login = async (req, res) => {
         message: "Please provide email and password",
       });
     }
-
     // Find user and include password field
     const user = await User.findOne({ email }).select("+password");
-
     if (!user) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
       });
     }
-
     // Check if user is a regular user (not admin or moderator)
     const isRegularUser =
       user.roles.includes("user") &&
       !user.roles.includes("admin") &&
       !user.roles.includes("moderator");
-
     if (!isRegularUser) {
       return res.status(403).json({
         success: false,
         message: "Access denied. Please use admin portal to login.",
       });
     }
-
     // Check password
     const isPasswordValid = await user.comparePassword(password);
-
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
       });
     }
-
     // Generate token
-    const token = generateToken(user._id);
-
+    const token = generateToken(user?._id);
     // Set token in cookie
     res.cookie("token", token, {
       expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
@@ -137,7 +129,6 @@ export const login = async (req, res) => {
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
     });
-
     res.status(200).json({
       success: true,
       message: "Login successful",
