@@ -25,7 +25,7 @@ router.use((req, res, next) => {
 
 // Client Authentication routes
 router.post('/signup', signup);      // Register new user (client side)
-// router.post('/login', login);        // Login user (client side)
+router.post('/login', login);        // Login user (client side)
 router.post('/logout', tokenMiddleware, logout);      // Logout user
 router.get('/me', tokenMiddleware, getMe);            // Get current user (protected)
 router.post('/refresh-token', refreshToken);         // Refresh expired token

@@ -16,9 +16,6 @@ dotenv.config();
 
 const app = express();
 
-// CORS configuration - MUST be before other middleware
-// Allow all origins (for both development and production)
-
 
 // Configure Helmet to work with CORS (after CORS middleware)
 app.use(
@@ -32,25 +29,32 @@ app.use(
 // Also use cors package as backup
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow all origins
-      callback(null, true);
+    origin: (origin, callback) => {
+      // allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      // allow only specific domains in production
+      const allowedOrigins = [
+        "http://localhost:7000",
+        "http://127.0.0.1:3000",
+        "https://storag-up-admin-64aa23516b44.herokuapp.com",
+      ];
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
     },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+    credentials: true, // allow cookies
+    methods: ["GET","POST","PUT","DELETE","OPTIONS","PATCH"],
     allowedHeaders: [
       "Content-Type",
       "Authorization",
       "X-Requested-With",
       "Accept",
       "Origin",
-      "Access-Control-Request-Method",
-      "Access-Control-Request-Headers",
-      "X-CSRF-Token",
     ],
     exposedHeaders: ["Content-Range", "X-Content-Range"],
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
   })
 );
 app.use(morgan("dev"));
