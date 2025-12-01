@@ -180,7 +180,7 @@ export const getMe = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found",
+        message: "User not found.",
       });
     }
 
@@ -837,6 +837,102 @@ export const adminSignup = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error during admin signup",
+      error: error.message,
+    });
+  }
+};
+
+// Update Password - Change password for authenticated user
+export const updatePassword = async (req, res) => {
+  try {
+    const { current_password, new_password, confirm_password } = req.body;
+
+    // Validation - Check all fields are provided
+    if (!current_password || !new_password || !confirm_password) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password, new password, and confirm password are required.",
+      });
+    }
+
+    // Check if new password and confirm password match
+    if (new_password !== confirm_password) {
+      return res.status(400).json({
+        success: false,
+        message: "New password and confirm password do not match.",
+      });
+    }
+
+    // Validate new password length
+    if (new_password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 6 characters long.",
+      });
+    }
+
+    // Check if new password is different from current password
+    if (current_password === new_password) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be different from current password.",
+      });
+    }
+
+    // Get user from request (set by tokenMiddleware)
+    const userId = req.userId || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required. Please sign in.",
+      });
+    }
+
+    // Find user and include password field
+    const user = await User.findById(userId).select("+password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await user.comparePassword(current_password);
+    if (!isCurrentPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Current password is incorrect.",
+      });
+    }
+
+    // Update password (will be hashed automatically by pre-save hook)
+    user.password = new_password;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password updated successfully.",
+      data: {
+        _id: user._id,
+        email: user.email,
+        name: user.name,
+      },
+    });
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Error updating password",
       error: error.message,
     });
   }

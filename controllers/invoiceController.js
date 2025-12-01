@@ -1,4 +1,7 @@
 import Invoice from '../models/Invoice.js';
+import User from '../models/User.js';
+import Unit from '../models/Unit.js';
+import mongoose from 'mongoose';
 
 const buildPagination = (page, limit, total) => {
   const totalPages = Math.ceil(total / limit) || 1;
@@ -35,6 +38,59 @@ export const createInvoice = async (req, res) => {
       delete req.body.invoice_id;
     }
 
+    // Validate customer_id if provided
+    if (req.body.customer_id) {
+      // Check if customer_id is a valid MongoDB ObjectId
+      if (!mongoose.Types.ObjectId.isValid(req.body.customer_id)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid customer_id format'
+        });
+      }
+
+      // Check if the user exists
+      const user = await User.findById(req.body.customer_id);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'Customer not found with the provided customer_id'
+        });
+      }
+    }
+
+    // Normalize unit_number to array format
+    if (req.body.unit_number) {
+      // If it's a string, convert to array
+      if (typeof req.body.unit_number === 'string') {
+        req.body.unit_number = [req.body.unit_number.trim()];
+      } else if (Array.isArray(req.body.unit_number)) {
+        // Trim and filter empty strings
+        req.body.unit_number = req.body.unit_number
+          .map(num => typeof num === 'string' ? num.trim() : String(num).trim())
+          .filter(num => num !== '');
+      }
+
+      // Validate that we have at least one unit number
+      if (!Array.isArray(req.body.unit_number) || req.body.unit_number.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one unit number is required'
+        });
+      }
+
+      // Validate that all unit numbers exist
+      const units = await Unit.find({ unit_number: { $in: req.body.unit_number } });
+      const foundUnitNumbers = units.map(u => u.unit_number);
+      const missingUnits = req.body.unit_number.filter(num => !foundUnitNumbers.includes(num));
+      
+      if (missingUnits.length > 0) {
+        return res.status(404).json({
+          success: false,
+          message: `Units not found: ${missingUnits.join(', ')}`
+        });
+      }
+    }
+
     const invoice = await Invoice.create(req.body);
 
     res.status(201).json({
@@ -69,7 +125,7 @@ export const createInvoice = async (req, res) => {
 
 export const getInvoices = async (req, res) => {
   try {
-    const { customer_name, status, sortBy } = req.query;
+    const { customer_name, status, sortBy, unit_number } = req.query;
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip = (page - 1) * limit;
@@ -92,6 +148,15 @@ export const getInvoices = async (req, res) => {
       }
     }
 
+    // Filter by unit_number (supports single string or comma-separated values)
+    if (unit_number && unit_number.trim() !== '') {
+      // Split by comma if multiple unit numbers provided
+      const unitNumbers = unit_number.split(',').map(num => num.trim()).filter(num => num !== '');
+      if (unitNumbers.length > 0) {
+        filter.unit_number = { $in: unitNumbers };
+      }
+    }
+
     // Build sort query
     let sortQuery = { createdAt: -1 }; // Default: newest first
     
@@ -108,23 +173,51 @@ export const getInvoices = async (req, res) => {
       // If invalid sortBy, use default
     }
 
+    // Check if populate is requested (default: false for performance)
+    const populate = req.query.populate === 'true' || req.query.populate === '1';
+    
+    let invoiceQuery = Invoice.find(filter)
+      .skip(skip)
+      .limit(limit)
+      .sort(sortQuery);
+    
+    // Optionally populate customer data
+    if (populate) {
+      invoiceQuery = invoiceQuery.populate('customer_id', 'name first_name last_name email phoneNumber');
+    }
+
     const [total, invoices] = await Promise.all([
       Invoice.countDocuments(filter),
-      Invoice.find(filter)
-        .skip(skip)
-        .limit(limit)
-        .sort(sortQuery)
+      invoiceQuery
     ]);
+
+    // Optionally populate units data for each invoice
+    let invoicesData = invoices;
+    if (populate) {
+      invoicesData = await Promise.all(
+        invoices.map(async (invoice) => {
+          const invoiceObj = invoice.toObject();
+          if (invoice.unit_number && Array.isArray(invoice.unit_number) && invoice.unit_number.length > 0) {
+            const units = await Unit.find({ unit_number: { $in: invoice.unit_number } });
+            invoiceObj.units = units;
+          } else {
+            invoiceObj.units = [];
+          }
+          return invoiceObj;
+        })
+      );
+    }
 
     res.status(200).json({
       success: true,
-      count: invoices.length,
+      count: invoicesData.length,
       pagination: buildPagination(page, limit, total),
-      data: invoices,
+      data: invoicesData,
       filter: {
         ...(customer_name && { customer_name: customer_name.trim() }),
         ...(status && { status: status.trim().toLowerCase() }),
-        ...(sortBy && { sortBy: sortBy.trim().toLowerCase() })
+        ...(sortBy && { sortBy: sortBy.trim().toLowerCase() }),
+        ...(unit_number && { unit_number: unit_number.trim() })
       }
     });
   } catch (error) {
@@ -138,7 +231,17 @@ export const getInvoices = async (req, res) => {
 
 export const getInvoiceById = async (req, res) => {
   try {
-    const invoice = await Invoice.findById(req.params.id);
+    // Check if populate is requested (default: true for single invoice)
+    const populate = req.query.populate !== 'false';
+    
+    let invoiceQuery = Invoice.findById(req.params.id);
+    
+    // Populate customer data by default for single invoice
+    if (populate) {
+      invoiceQuery = invoiceQuery.populate('customer_id', 'name first_name last_name email phoneNumber');
+    }
+    
+    const invoice = await invoiceQuery;
 
     if (!invoice) {
       return res.status(404).json({
@@ -147,9 +250,20 @@ export const getInvoiceById = async (req, res) => {
       });
     }
 
+    // Convert invoice to object to add unit data
+    const invoiceData = invoice.toObject();
+
+    // Find units based on unit_number array
+    if (invoice.unit_number && Array.isArray(invoice.unit_number) && invoice.unit_number.length > 0) {
+      const units = await Unit.find({ unit_number: { $in: invoice.unit_number } });
+      invoiceData.units = units; // Changed to plural 'units' since it's an array
+    } else {
+      invoiceData.units = [];
+    }
+
     res.status(200).json({
       success: true,
-      data: invoice
+      data: invoiceData
     });
   } catch (error) {
     if (error.name === 'CastError') {
@@ -169,9 +283,19 @@ export const getInvoiceById = async (req, res) => {
 
 export const getInvoiceByInvoiceId = async (req, res) => {
   try {
-    const invoice = await Invoice.findOne({ 
+    // Check if populate is requested (default: true for single invoice)
+    const populate = req.query.populate !== 'false';
+    
+    let invoiceQuery = Invoice.findOne({ 
       invoice_id: req.params.invoiceId.toUpperCase() 
     });
+    
+    // Populate customer data by default for single invoice
+    if (populate) {
+      invoiceQuery = invoiceQuery.populate('customer_id', 'name first_name last_name email phoneNumber');
+    }
+    
+    const invoice = await invoiceQuery;
 
     if (!invoice) {
       return res.status(404).json({
@@ -180,9 +304,20 @@ export const getInvoiceByInvoiceId = async (req, res) => {
       });
     }
 
+    // Convert invoice to object to add unit data
+    const invoiceData = invoice.toObject();
+
+    // Find units based on unit_number array
+    if (invoice.unit_number && Array.isArray(invoice.unit_number) && invoice.unit_number.length > 0) {
+      const units = await Unit.find({ unit_number: { $in: invoice.unit_number } });
+      invoiceData.units = units; // Changed to plural 'units' since it's an array
+    } else {
+      invoiceData.units = [];
+    }
+
     res.status(200).json({
       success: true,
-      data: invoice
+      data: invoiceData
     });
   } catch (error) {
     res.status(500).json({
@@ -220,6 +355,59 @@ export const updateInvoice = async (req, res) => {
     // Ensure invoice_id is uppercase if provided
     if (req.body.invoice_id) {
       req.body.invoice_id = req.body.invoice_id.toUpperCase();
+    }
+
+    // Validate customer_id if being updated
+    if (req.body.customer_id) {
+      // Check if customer_id is a valid MongoDB ObjectId
+      if (!mongoose.Types.ObjectId.isValid(req.body.customer_id)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid customer_id format'
+        });
+      }
+
+      // Check if the user exists
+      const user = await User.findById(req.body.customer_id);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'Customer not found with the provided customer_id'
+        });
+      }
+    }
+
+    // Normalize unit_number to array format if being updated
+    if (req.body.unit_number !== undefined) {
+      // If it's a string, convert to array
+      if (typeof req.body.unit_number === 'string') {
+        req.body.unit_number = [req.body.unit_number.trim()];
+      } else if (Array.isArray(req.body.unit_number)) {
+        // Trim and filter empty strings
+        req.body.unit_number = req.body.unit_number
+          .map(num => typeof num === 'string' ? num.trim() : String(num).trim())
+          .filter(num => num !== '');
+      }
+
+      // Validate that we have at least one unit number
+      if (!Array.isArray(req.body.unit_number) || req.body.unit_number.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one unit number is required'
+        });
+      }
+
+      // Validate that all unit numbers exist
+      const units = await Unit.find({ unit_number: { $in: req.body.unit_number } });
+      const foundUnitNumbers = units.map(u => u.unit_number);
+      const missingUnits = req.body.unit_number.filter(num => !foundUnitNumbers.includes(num));
+      
+      if (missingUnits.length > 0) {
+        return res.status(404).json({
+          success: false,
+          message: `Units not found: ${missingUnits.join(', ')}`
+        });
+      }
     }
 
     Object.assign(invoice, req.body);

@@ -23,9 +23,14 @@ const invoiceSchema = new mongoose.Schema(
       lowercase: true,
     },
     unit_number: {
-      type: String,
+      type: [String],
       required: [true, "Unit number is required"],
-      trim: true,
+      validate: {
+        validator: function(v) {
+          return Array.isArray(v) && v.length > 0;
+        },
+        message: "At least one unit number is required"
+      }
     },
     amount: {
       type: Number,

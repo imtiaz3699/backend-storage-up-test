@@ -1,73 +1,72 @@
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
-import { stringify } from "querystring";
 
 const userSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, "Name is required"],
+      required: [true, "Name is required."],
       trim: true,
-      minlength: [2, "Name must be at least 2 characters long"],
-      maxlength: [100, "Name cannot exceed 100 characters"],
+      minlength: [2, "Name must be at least 2 characters long."],
+      maxlength: [100, "Name cannot exceed 100 characters."],
     },
     first_name: {
       type: String,
       trim: true,
-      maxlength: [50, "First name cannot exceed 50 characters"],
+      maxlength: [50, "First name cannot exceed 50 characters."],
     },
     last_name: {
       type: String,
       trim: true,
-      maxlength: [50, "Last name cannot exceed 50 characters"],
+      maxlength: [50, "Last name cannot exceed 50 characters."],
     },
     email: {
       type: String,
-      required: [true, "Email is required"],
+      required: [true, "Email is required."],
       unique: true,
       lowercase: true,
       trim: true,
-      match: [/^\S+@\S+\.\S+$/, "Please provide a valid email address"],
+      match: [/^\S+@\S+\.\S+$/, "Please provide a valid email address."],
     },
     phoneNumber: {
       type: String,
-      required: [true, "Phone number is required"],
+      required: [true, "Phone number is required."],
       trim: true,
       match: [
         /^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,9}$/,
-        "Please provide a valid phone number",
+        "Please provide a valid phone number.",
       ],
     },
     address_line_one: {
       type: String,
       trim: true,
-      maxlength: [200, "Address line one cannot exceed 200 characters"],
+      maxlength: [200, "Address line one cannot exceed 200 characters."],
     },
     address_line_two: {
       type: String,
       trim: true,
-      maxlength: [200, "Address line two cannot exceed 200 characters"],
+      maxlength: [200, "Address line two cannot exceed 200 characters."],
     },
     city: {
       type: String,
       trim: true,
-      maxlength: [100, "City cannot exceed 100 characters"],
+      maxlength: [100, "City cannot exceed 100 characters."],
     },
     state_province: {
       type: String,
       trim: true,
-      maxlength: [100, "State/Province cannot exceed 100 characters"],
+      maxlength: [100, "State/Province cannot exceed 100 characters."],
     },
     zip_code: {
       type: String,
       trim: true,
-      maxlength: [20, "Zip code cannot exceed 20 characters"],
+      maxlength: [20, "Zip code cannot exceed 20 characters."],
     },
     password: {
       type: String,
-      required: [true, "Password is required"],
-      minlength: [6, "Password must be at least 6 characters long"],
+      required: [true, "Password is required."],
+      minlength: [6, "Password must be at least 6 characters long."],
       select: false, // Don't return password by default in queries
     },
     roles: {
@@ -160,10 +159,40 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Remove password from JSON output
+// Remove password from JSON output and ensure all fields are included
 userSchema.methods.toJSON = function () {
   const userObject = this.toObject();
   delete userObject.password;
+  
+  // Ensure optional fields are always included (even if undefined/null)
+  // This is important for fields added later to the schema
+  const fieldsToInclude = [
+    'first_name',
+    'last_name',
+    'address_line_one',
+    'address_line_two',
+    'city',
+    'state_province',
+    'zip_code',
+    'secondaryContactName',
+    'secondaryPhoneNumber',
+    'secondaryEmail',
+    'language',
+    'other',
+    'unit_id',
+    'stripe_customer_id',
+    'id_document',
+    'contract_copy',
+    'additional_records'
+  ];
+  
+  // Set undefined fields to null so they appear in JSON
+  fieldsToInclude.forEach(field => {
+    if (userObject[field] === undefined) {
+      userObject[field] = null;
+    }
+  });
+  
   return userObject;
 };
 

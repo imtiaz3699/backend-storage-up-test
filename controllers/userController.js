@@ -205,8 +205,15 @@ export const updateUser = async (req, res) => {
   try {
     const {
       name,
+      first_name,
+      last_name,
       email,
       phoneNumber,
+      address_line_one,
+      address_line_two,
+      city,
+      state_province,
+      zip_code,
       password,
       roles,
       secondaryContactName,
@@ -218,16 +225,23 @@ export const updateUser = async (req, res) => {
     const updateData = {};
 
     // Only include fields that are provided
-    if (name) updateData.name = name;
-    if (email) updateData.email = email;
-    if (phoneNumber) updateData.phoneNumber = phoneNumber;
-    if (password) updateData.password = password;
-    if (roles) updateData.roles = roles;
-    if (secondaryContactName) updateData.secondaryContactName = secondaryContactName;
-    if (secondaryPhoneNumber) updateData.secondaryPhoneNumber = secondaryPhoneNumber;
-    if (secondaryEmail) updateData.secondaryEmail = secondaryEmail;
-    if (language) updateData.language = language;
-    if (other) updateData.other = other;
+    if (name !== undefined) updateData.name = name;
+    if (first_name !== undefined) updateData.first_name = first_name;
+    if (last_name !== undefined) updateData.last_name = last_name;
+    if (email !== undefined) updateData.email = email;
+    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
+    if (address_line_one !== undefined) updateData.address_line_one = address_line_one;
+    if (address_line_two !== undefined) updateData.address_line_two = address_line_two;
+    if (city !== undefined) updateData.city = city;
+    if (state_province !== undefined) updateData.state_province = state_province;
+    if (zip_code !== undefined) updateData.zip_code = zip_code;
+    if (password !== undefined) updateData.password = password;
+    if (roles !== undefined) updateData.roles = roles;
+    if (secondaryContactName !== undefined) updateData.secondaryContactName = secondaryContactName;
+    if (secondaryPhoneNumber !== undefined) updateData.secondaryPhoneNumber = secondaryPhoneNumber;
+    if (secondaryEmail !== undefined) updateData.secondaryEmail = secondaryEmail;
+    if (language !== undefined) updateData.language = language;
+    if (other !== undefined) updateData.other = other;
 
     // Handle file uploads for documents
     if (req.files) {
@@ -331,7 +345,7 @@ export const updateUser = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "User updated successfully",
+      message: "User updated successfully.",
       data: user,
     });
   } catch (error) {
