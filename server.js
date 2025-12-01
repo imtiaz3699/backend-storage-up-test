@@ -38,7 +38,10 @@ app.use(
         "http://localhost:7000",
         "http://127.0.0.1:3000",
         "https://storag-up-admin-64aa23516b44.herokuapp.com",
+        "https://5a8385ef78c9.ngrok-free.app",
+        "http://192.168.100.141:7000"
       ];
+      
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
