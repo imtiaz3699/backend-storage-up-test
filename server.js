@@ -16,9 +16,6 @@ dotenv.config();
 
 const app = express();
 
-// CORS configuration - MUST be before other middleware
-// Allow all origins (for both development and production)
-
 
 // Configure Helmet to work with CORS (after CORS middleware)
 app.use(
