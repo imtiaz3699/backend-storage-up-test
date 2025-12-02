@@ -107,6 +107,27 @@ const operatingHoursSchema = new mongoose.Schema({
   accessHours: String
 }, { _id: false });
 
+const locationMapSchema = new mongoose.Schema({
+  name: {
+    type: String
+  },
+  address: {
+    type: String
+  },
+  lat: {
+    type: Number,
+    required: true
+  },
+  lng: {
+    type: Number,
+    required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+}, { _id: false });
+
 const locationSchema = new mongoose.Schema({
   locationDetails: {
     type: locationDetailsSchema,
@@ -122,8 +143,7 @@ const locationSchema = new mongoose.Schema({
     required: true
   },
   locationMap: {
-    type: String,
-    trim: true
+    type: locationMapSchema
   },
   facilityInformation: {
     type: facilityInformationSchema,
@@ -136,6 +156,12 @@ const locationSchema = new mongoose.Schema({
   locationImages: {
     type: [String],
     default: []
+  },
+  area: {
+    type: String,
+    enum: ['North', 'South'],
+    default: null,
+    trim: true
   }
 }, {
   timestamps: true

@@ -6,10 +6,14 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Create uploads directory if it doesn't exist
+// Create uploads directories if they don't exist
 const uploadsDir = path.join(__dirname, '..', 'uploads', 'documents');
+const locationImagesDir = path.join(__dirname, '..', 'uploads', 'locations');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
+}
+if (!fs.existsSync(locationImagesDir)) {
+  fs.mkdirSync(locationImagesDir, { recursive: true });
 }
 
 // Configure storage
@@ -63,10 +67,60 @@ export const uploadUserDocuments = upload.fields([
   { name: 'additional_records', maxCount: 1 }
 ]);
 
+// Storage for location images
+const locationImagesStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, locationImagesDir);
+  },
+  filename: (req, file, cb) => {
+    // Generate unique filename: timestamp-originalname
+    const timestamp = Date.now();
+    const originalName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filename = `${timestamp}-${originalName}`;
+    cb(null, filename);
+  }
+});
+
+// File filter for location images - only images
+const locationImageFilter = (req, file, cb) => {
+  const allowedMimes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'image/webp'
+  ];
+
+  if (allowedMimes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error(`Invalid file type. Only images (JPEG, PNG, GIF, WebP) are allowed.`), false);
+  }
+};
+
+// Configure multer for location images
+const locationImagesUpload = multer({
+  storage: locationImagesStorage,
+  fileFilter: locationImageFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB max file size
+  }
+});
+
+// Middleware for uploading location images (multiple files)
+export const uploadLocationImages = locationImagesUpload.array('locationImages', 10); // max 10 images
+
 // Helper function to get file URL
 export const getFileUrl = (filename) => {
   if (!filename) return null;
   // Return URL path for accessing the file
   return `/uploads/documents/${filename}`;
+};
+
+// Helper function to get location image URL
+export const getLocationImageUrl = (filename) => {
+  if (!filename) return null;
+  // Return URL path for accessing the location image
+  return `/uploads/locations/${filename}`;
 };
 
