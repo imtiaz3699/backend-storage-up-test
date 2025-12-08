@@ -68,9 +68,31 @@ export const getUnits = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip = (page - 1) * limit;
 
+    // Build filter object
+    const filter = {};
+
+    // Filter by unit_number if provided
+    if (req.query.unit_number) {
+      filter.unit_number = { $regex: req.query.unit_number, $options: 'i' };
+    }
+
+    // Build sort object
+    let sort = { createdAt: -1 }; // Default sort by date (newest first)
+    
+    if (req.query.sort_by) {
+      const sortBy = req.query.sort_by.toLowerCase();
+      const sortOrder = req.query.sort_order === 'asc' ? 1 : -1; // Default descending
+      
+      if (sortBy === 'date' || sortBy === 'createdat') {
+        sort = { createdAt: sortOrder };
+      } else if (sortBy === 'status' || sortBy === 'unit_status') {
+        sort = { 'unit_details.unit_status': sortOrder };
+      }
+    }
+
     const [total, units] = await Promise.all([
-      Unit.countDocuments(),
-      Unit.find().skip(skip).limit(limit).sort({ createdAt: -1 }),
+      Unit.countDocuments(filter),
+      Unit.find(filter).skip(skip).limit(limit).sort(sort),
     ]);
 
     res.status(200).json({
@@ -375,6 +397,209 @@ export const releaseUnit = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error releasing unit',
+      error: error.message
+    });
+  }
+};
+
+// Helper function to parse number input (handles ranges and individual numbers)
+const parseNumberInput = (input) => {
+  if (!input || typeof input !== 'string') {
+    return [];
+  }
+
+  const numbers = [];
+  // Split by comma or newline, then trim each part
+  const parts = input.split(/[,\n]/).map(part => part.trim()).filter(part => part);
+
+  for (const part of parts) {
+    // Check if it's a range (e.g., "99-102")
+    if (part.includes('-')) {
+      const [start, end] = part.split('-').map(n => parseInt(n.trim(), 10));
+      
+      if (isNaN(start) || isNaN(end)) {
+        continue; // Skip invalid ranges
+      }
+
+      // Generate range (inclusive)
+      const min = Math.min(start, end);
+      const max = Math.max(start, end);
+      
+      for (let i = min; i <= max; i++) {
+        numbers.push(i);
+      }
+    } else {
+      // It's an individual number
+      const num = parseInt(part, 10);
+      if (!isNaN(num)) {
+        numbers.push(num);
+      }
+    }
+  }
+
+  // Remove duplicates and sort
+  return [...new Set(numbers)].sort((a, b) => a - b);
+};
+
+// Helper function to extract prefix from unit number (non-numeric part)
+const extractPrefix = (unitNumber) => {
+  if (!unitNumber || typeof unitNumber !== 'string') {
+    return '';
+  }
+  
+  // Extract all non-numeric characters from the beginning
+  const match = unitNumber.match(/^([^0-9]*)/);
+  return match ? match[1] : '';
+};
+
+// Helper function to apply force length padding
+const applyForceLength = (numbers, forceLength) => {
+  if (!forceLength || forceLength <= 0) {
+    return numbers.map(num => String(num));
+  }
+
+  return numbers.map(num => {
+    const numStr = String(num);
+    return numStr.padStart(forceLength, '0');
+  });
+};
+
+// Multiply/Create multiple units from a source unit
+export const multiplyUnits = async (req, res) => {
+  try {
+    const { sourceUnitNumber, forceLength, newNumbers } = req.body;
+
+    // Validate required fields
+    if (!sourceUnitNumber || typeof sourceUnitNumber !== 'string' || sourceUnitNumber.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Source unit number is required'
+      });
+    }
+
+    if (!newNumbers || typeof newNumbers !== 'string' || newNumbers.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'New numbers are required. Please provide unit numbers separated by commas or new lines.'
+      });
+    }
+
+    // Fetch source unit by unit_number
+    const sourceUnit = await Unit.findOne({ unit_number: sourceUnitNumber.trim() });
+    if (!sourceUnit) {
+      return res.status(404).json({
+        success: false,
+        message: `Source unit with number "${sourceUnitNumber}" not found`
+      });
+    }
+
+    // Extract prefix from source unit number (e.g., "A" from "A001")
+    const sourceUnitPrefix = extractPrefix(sourceUnitNumber.trim());
+
+    // Parse and expand numbers
+    const numberList = parseNumberInput(newNumbers);
+    
+    if (numberList.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid numbers found in the input'
+      });
+    }
+
+    // Apply force length padding
+    const paddedNumbers = applyForceLength(numberList, forceLength);
+
+    // Prepend prefix to each unit number (e.g., "A" + "0176" = "A0176")
+    const finalUnitNumbers = paddedNumbers.map(num => sourceUnitPrefix + num);
+
+    // Check for existing units with these numbers
+    const existingUnits = await Unit.find({
+      unit_number: { $in: finalUnitNumbers }
+    });
+
+    const existingNumbers = new Set(existingUnits.map(u => u.unit_number));
+    const uniqueNumbers = finalUnitNumbers.filter(num => !existingNumbers.has(num));
+    const skippedNumbers = finalUnitNumbers.filter(num => existingNumbers.has(num));
+
+    if (uniqueNumbers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'All unit numbers already exist',
+        skipped: skippedNumbers
+      });
+    }
+
+    // Generate unit objects from source unit
+    const unitsToCreate = uniqueNumbers.map(unitNumber => {
+      // Create a new unit object based on source unit
+      const newUnit = {
+        unit_number: unitNumber,
+        location: sourceUnit.location,
+        location_two: sourceUnit.location_two || undefined,
+        description: sourceUnit.description || undefined,
+        unit_details: sourceUnit.unit_details ? { ...sourceUnit.unit_details.toObject() } : undefined,
+        dimensions: sourceUnit.dimensions ? { ...sourceUnit.dimensions.toObject() } : undefined,
+        monthly_rate: sourceUnit.monthly_rate || 0,
+        other_information: sourceUnit.other_information ? { ...sourceUnit.other_information.toObject() } : undefined,
+        maintenance_comments: sourceUnit.maintenance_comments || undefined,
+        unit_is: 'vacant', // Always default to vacant
+        customer_email: null // Always empty for new units
+      };
+
+      // Remove undefined fields
+      Object.keys(newUnit).forEach(key => {
+        if (newUnit[key] === undefined) {
+          delete newUnit[key];
+        }
+      });
+
+      return newUnit;
+    });
+
+    // Bulk create units
+    const createdUnits = await Unit.insertMany(unitsToCreate, {
+      ordered: false // Continue even if some fail
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Successfully created ${createdUnits.length} unit(s)`,
+      created: createdUnits.length,
+      skipped: skippedNumbers.length,
+      skippedNumbers: skippedNumbers.length > 0 ? skippedNumbers : undefined,
+      totalRequested: paddedNumbers.length,
+      data: createdUnits
+    });
+  } catch (error) {
+    // Handle bulk write errors (duplicates)
+    if (error.name === 'BulkWriteError') {
+      const created = error.result?.insertedCount || 0;
+      const duplicates = error.writeErrors?.filter(e => e.code === 11000) || [];
+      
+      return res.status(207).json({ // 207 Multi-Status
+        success: true,
+        message: `Partially created ${created} unit(s). Some units already exist.`,
+        created: created,
+        skipped: duplicates.length,
+        errors: duplicates.map(e => ({
+          unit_number: e.op?.unit_number,
+          message: 'Unit number already exists'
+        }))
+      });
+    }
+
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Error multiplying units',
       error: error.message
     });
   }

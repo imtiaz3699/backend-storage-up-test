@@ -56,16 +56,35 @@ const unitTypeConfigurationSchema = new mongoose.Schema({
 
 const assignmentsSchema = new mongoose.Schema({
   billing_plan: {
-    type: String,
-    trim: true
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BillingPlan',
   },
   rental_analysis_code: {
-    type: String,
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'RentalAnalysisCode',
     trim: true
   },
   organization_analysis_code: {
     type: String,
     trim: true
+  }
+}, { _id: false });
+
+const unitTypeStatisticsSchema = new mongoose.Schema({
+  total_units_of_this_type: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  occupied_units_of_this_type: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  vacant_units_of_this_type: {
+    type: Number,
+    default: 0,
+    min: 0
   }
 }, { _id: false });
 
@@ -87,6 +106,10 @@ const unitTypeSchema = new mongoose.Schema({
   },
   assignments: {
     type: assignmentsSchema,
+    default: () => ({})
+  },
+  unit_type_statistics: {
+    type: unitTypeStatisticsSchema,
     default: () => ({})
   }
 }, {

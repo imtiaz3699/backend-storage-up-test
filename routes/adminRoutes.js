@@ -15,7 +15,8 @@ import {
   deleteUnit,
   assignUnitToUser,
   releaseUnit,
-  searchUnits
+  searchUnits,
+  multiplyUnits
 } from '../controllers/unitController.js';
 import {
   createUnitType,
@@ -31,6 +32,20 @@ import {
   updateAnalysisCode,
   deleteAnalysisCode
 } from '../controllers/analysisCodeController.js';
+import {
+  createReceiptAnalysisCode,
+  getReceiptAnalysisCodes,
+  getReceiptAnalysisCodeById,
+  updateReceiptAnalysisCode,
+  deleteReceiptAnalysisCode
+} from '../controllers/receiptAnalysisCodeController.js';
+import {
+  createBillingPlan,
+  getBillingPlans,
+  getBillingPlanById,
+  updateBillingPlan,
+  deleteBillingPlan
+} from '../controllers/billingPlanController.js';
 import {
   createNoticeSetup,
   getNoticeSetups,
@@ -76,6 +91,7 @@ router.delete('/locations/:id', deleteLocation);// Delete location
 
 // Admin Unit Management routes
 router.post('/units', createUnit);             // Create unit
+router.post('/units/multiply', multiplyUnits); // Multiply/create multiple units from source
 router.get('/units/search', searchUnits);       // Search units by unit number (for dropdown)
 router.get('/units', getUnits);                // List units
 router.get('/units/:id', getUnitById);         // Get unit by ID
@@ -97,6 +113,20 @@ router.get('/analysis-codes', getAnalysisCodes);                // List analysis
 router.get('/analysis-codes/:id', getAnalysisCodeById);         // Get analysis code by ID
 router.put('/analysis-codes/:id', updateAnalysisCode);          // Update analysis code
 router.delete('/analysis-codes/:id', deleteAnalysisCode);       // Delete analysis code
+
+// Admin Receipt Analysis Code Management routes
+router.post('/receipt-analysis-codes', createReceiptAnalysisCode);             // Create receipt analysis code
+router.get('/receipt-analysis-codes', getReceiptAnalysisCodes);                // List receipt analysis codes
+router.get('/receipt-analysis-codes/:id', getReceiptAnalysisCodeById);         // Get receipt analysis code by ID
+router.put('/receipt-analysis-codes/:id', updateReceiptAnalysisCode);          // Update receipt analysis code
+router.delete('/receipt-analysis-codes/:id', deleteReceiptAnalysisCode);       // Delete receipt analysis code
+
+// Admin Billing Plan Management routes
+router.post('/billing-plans', createBillingPlan);             // Create billing plan
+router.get('/billing-plans', getBillingPlans);                // List billing plans
+router.get('/billing-plans/:id', getBillingPlanById);         // Get billing plan by ID
+router.put('/billing-plans/:id', updateBillingPlan);          // Update billing plan
+router.delete('/billing-plans/:id', deleteBillingPlan);       // Delete billing plan
 
 // Admin Notice Setup Management routes
 router.post('/notice-setups', createNoticeSetup);             // Create notice setup

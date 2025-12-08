@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 const unitDetailsSchema = new mongoose.Schema({
   unit_number: {
     type: String,
-    trim: true
+    trim: true,
+
   },
   unit_type: {
     type: String,
@@ -47,7 +48,7 @@ const otherInformationSchema = new mongoose.Schema({
 const unitSchema = new mongoose.Schema({
   unit_number: {
     type: String,
-    required: [true, 'Unit number is required'],
+    required: [true, 'Unit number is required.'],
     trim: true,
     unique: true
   },
