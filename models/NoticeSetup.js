@@ -70,6 +70,99 @@ const accessControlTriggersSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const emailSchema = new mongoose.Schema({
+  email_subject: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  email_content: {
+    type: String,
+    trim: true,
+    default: ''
+  }
+}, { _id: false });
+
+const noticeDesignSchema = new mongoose.Schema({
+  letter_content: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  email: {
+    type: emailSchema,
+    default: () => ({})
+  },
+  text_message: {
+    type: String,
+    trim: true,
+    default: ''
+  }
+}, { _id: false });
+
+const simplifiedChargeSystemSchema = new mongoose.Schema({
+  minimum_charge: {
+    type: Number,
+    default: 0
+  },
+  minimum_percentage: {
+    type: Number,
+    default: 0
+  }
+}, { _id: false });
+
+const invoicingFeeSchema = new mongoose.Schema({
+  fee_to_charge_customer: {
+    type: Number,
+    default: 0
+  },
+  analysis_code_to_assing: {
+    type: String,
+    trim: true,
+    default: ''
+  }
+}, { _id: false });
+
+const noticeFeeSetupSchema = new mongoose.Schema({
+  simplified_charge_system: {
+    type: simplifiedChargeSystemSchema,
+    default: () => ({})
+  },
+  tiered_charge_system: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  fee_options: {
+    type: Boolean,
+    default: false
+  },
+  fee_on_one_month: {
+    type: Boolean,
+    default: false
+  },
+  charge_is_per_unit: {
+    type: Boolean,
+    default: false
+  },
+  analysis_code_to_assign: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  invoicing_fee: {
+    type: invoicingFeeSchema,
+    default: () => ({})
+  }
+}, { _id: false });
+
+const noticeChargesSchema = new mongoose.Schema({
+  notice_fee_setup: {
+    type: noticeFeeSetupSchema,
+    default: () => ({})
+  }
+}, { _id: false });
+
 const noticeSetupSchema = new mongoose.Schema({
   notice_plan_number: {
     type: Number,
@@ -77,7 +170,7 @@ const noticeSetupSchema = new mongoose.Schema({
   },
   name_of_this_notice: {
     type: String,
-    required: [true, 'Name of this notice is required'],
+    required: [true, 'Name of this notice is required.'],
     trim: true
   },
   send_this_notice: {
@@ -101,6 +194,14 @@ const noticeSetupSchema = new mongoose.Schema({
   },
   access_control_triggers: {
     type: accessControlTriggersSchema,
+    default: () => ({})
+  },
+  notice_design: {
+    type: noticeDesignSchema,
+    default: () => ({})
+  },
+  notice_charges: {
+    type: noticeChargesSchema,
     default: () => ({})
   }
 }, {

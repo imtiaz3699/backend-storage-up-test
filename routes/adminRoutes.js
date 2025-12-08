@@ -18,6 +18,8 @@ import {
   searchUnits,
   multiplyUnits
 } from '../controllers/unitController.js';
+
+
 import {
   createUnitType,
   getUnitTypes,
@@ -51,6 +53,10 @@ import {
   getNoticeSetups,
   getNoticeSetupById,
   updateNoticeSetup,
+  updateNoticeDesign,
+  createNoticeDesignOnly,
+  createNoticeCharges,
+  updateNoticeCharges,
   deleteNoticeSetup
 } from '../controllers/noticeSetupController.js';
 import {
@@ -129,9 +135,13 @@ router.put('/billing-plans/:id', updateBillingPlan);          // Update billing 
 router.delete('/billing-plans/:id', deleteBillingPlan);       // Delete billing plan
 
 // Admin Notice Setup Management routes
+router.post('/notice-setups/notice-design', createNoticeDesignOnly);   // Create notice setup with notice_design only
+router.post('/notice-setups/notice-charges', createNoticeCharges);     // Create notice charges-only record
 router.post('/notice-setups', createNoticeSetup);             // Create notice setup
 router.get('/notice-setups', getNoticeSetups);                // List notice setups
 router.get('/notice-setups/:id', getNoticeSetupById);         // Get notice setup by ID
+router.put('/notice-setups/:id/notice-design', updateNoticeDesign);  // Update notice design separately (MUST be before /:id route)
+router.put('/notice-setups/:id/notice-charges', updateNoticeCharges);  // Update notice charges separately
 router.put('/notice-setups/:id', updateNoticeSetup);          // Update notice setup
 router.delete('/notice-setups/:id', deleteNoticeSetup);       // Delete notice setup
 
