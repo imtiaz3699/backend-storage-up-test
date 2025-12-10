@@ -229,6 +229,132 @@ export const getInvoices = async (req, res) => {
   }
 };
 
+export const getInvoicesByCustomerId = async (req, res) => {
+  try {
+    const { customer_id } = req.params;
+    const { status, sortBy, unit_number } = req.query;
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip = (page - 1) * limit;
+
+    // Validate customer_id
+    if (!mongoose.Types.ObjectId.isValid(customer_id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid customer_id format'
+      });
+    }
+
+    // Check if customer exists
+    const customer = await User.findById(customer_id);
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+
+    // Build filter query
+    const filter = { customer_id };
+    
+    // Filter by status (exact match, case-insensitive)
+    if (status && status.trim() !== '') {
+      const statusLower = status.trim().toLowerCase();
+      const allowedStatuses = ['pending', 'paid', 'overdue', 'cancelled'];
+      if (allowedStatuses.includes(statusLower)) {
+        filter.status = statusLower;
+      }
+    }
+
+    // Filter by unit_number (supports single string or comma-separated values)
+    if (unit_number && unit_number.trim() !== '') {
+      const unitNumbers = unit_number.split(',').map(num => num.trim()).filter(num => num !== '');
+      if (unitNumbers.length > 0) {
+        filter.unit_number = { $in: unitNumbers };
+      }
+    }
+
+    // Build sort query
+    let sortQuery = { createdAt: -1 }; // Default: newest first
+    
+    if (sortBy && sortBy.trim() !== '') {
+      const sortByLower = sortBy.trim().toLowerCase();
+      
+      if (sortByLower === 'by_date') {
+        sortQuery = { issue_date: -1 };
+      } else if (sortByLower === 'by_status') {
+        sortQuery = { status: 1 };
+      }
+    }
+
+    // Check if populate is requested (default: true for customer-specific invoices)
+    const populate = req.query.populate !== 'false';
+    
+    let invoiceQuery = Invoice.find(filter)
+      .skip(skip)
+      .limit(limit)
+      .sort(sortQuery);
+    
+    // Populate customer data by default
+    if (populate) {
+      invoiceQuery = invoiceQuery.populate('customer_id', 'name first_name last_name email phoneNumber');
+    }
+
+    const [total, invoices] = await Promise.all([
+      Invoice.countDocuments(filter),
+      invoiceQuery
+    ]);
+
+    // Populate units data for each invoice
+    let invoicesData = invoices;
+    if (populate) {
+      invoicesData = await Promise.all(
+        invoices.map(async (invoice) => {
+          const invoiceObj = invoice.toObject();
+          if (invoice.unit_number && Array.isArray(invoice.unit_number) && invoice.unit_number.length > 0) {
+            const units = await Unit.find({ unit_number: { $in: invoice.unit_number } });
+            invoiceObj.units = units;
+          } else {
+            invoiceObj.units = [];
+          }
+          return invoiceObj;
+        })
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      count: invoicesData.length,
+      pagination: buildPagination(page, limit, total),
+      data: invoicesData,
+      customer: {
+        _id: customer._id,
+        name: customer.name,
+        email: customer.email
+      },
+      filter: {
+        customer_id,
+        ...(status && { status: status.trim().toLowerCase() }),
+        ...(sortBy && { sortBy: sortBy.trim().toLowerCase() }),
+        ...(unit_number && { unit_number: unit_number.trim() })
+      }
+    });
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid customer_id format'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching invoices by customer_id',
+      error: error.message
+    });
+  }
+};
+
 export const getInvoiceById = async (req, res) => {
   try {
     // Check if populate is requested (default: true for single invoice)

@@ -69,6 +69,7 @@ import {
 import {
   createInvoice,
   getInvoices,
+  getInvoicesByCustomerId,
   getInvoiceById,
   getInvoiceByInvoiceId,
   updateInvoice,
@@ -138,8 +139,8 @@ router.put('/billing-plans/:id', updateBillingPlan);          // Update billing 
 router.delete('/billing-plans/:id', deleteBillingPlan);       // Delete billing plan
 
 // Admin Notice Setup Management routes
-router.post('/notice-setups/notice-design', createNoticeDesignOnly);   // Create notice setup with notice_design only
-router.post('/notice-setups/notice-charges', createNoticeCharges);     // Create notice charges-only record
+router.post('/notice-setups/notice-design', createNoticeDesignOnly);// Create notice setup with notice_design only
+router.post('/notice-setups/notice-charges', createNoticeCharges);// Create notice charges-only record
 router.post('/notice-setups', createNoticeSetup);             // Create notice setup
 router.get('/notice-setups', getNoticeSetups);                // List notice setups
 router.get('/notice-setups/:id', getNoticeSetupById);         // Get notice setup by ID
@@ -157,9 +158,10 @@ router.delete('/notice-charges/:id', deleteNoticeCharge);       // Delete notice
 
 // Admin Invoice Management routes
 router.post('/invoices', createInvoice);                       // Create invoice
-router.get('/invoices', getInvoices);                           // List invoices
-router.get('/invoices/by-id/:invoiceId', getInvoiceByInvoiceId); // Get invoice by invoice_id
-router.get('/invoices/:id', getInvoiceById);                     // Get invoice by MongoDB ID
+router.get('/invoices', getInvoices);                          // List invoices
+router.get('/invoices/by-customer/:customer_id', getInvoicesByCustomerId); // Get invoices by customer_id (MUST be before /:id route)
+router.get('/invoices/by-id/:invoiceId', getInvoiceByInvoiceId);// Get invoice by invoice_id
+router.get('/invoices/:id', getInvoiceById);                    // Get invoice by MongoDB ID
 router.put('/invoices/:id', updateInvoice);                     // Update invoice
 router.delete('/invoices/:id', deleteInvoice);                  // Delete invoice
 

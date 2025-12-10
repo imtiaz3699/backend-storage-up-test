@@ -2,6 +2,33 @@ import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 
+// Schema for rented units with all required keys
+const rentedUnitSchema = new mongoose.Schema({
+  unit_id: {
+    type: mongoose.Schema.Types.ObjectId, // MongoDB ObjectId
+    ref: "Unit",
+    required: true
+  },
+  billing_cycle: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  deposit_amount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  start_date: {
+    type: Date,
+    default: null
+  },
+  end_date: {
+    type: Date,
+    default: null
+  }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -111,6 +138,10 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Unit",
     },
+    rented_units: {
+      type: [rentedUnitSchema],
+      default: []
+    },
     passwordResetExpires: {
       type: Date,
       select: false,
@@ -180,6 +211,7 @@ userSchema.methods.toJSON = function () {
     'language',
     'other',
     'unit_id',
+    'rented_units',
     'stripe_customer_id',
     'id_document',
     'contract_copy',
@@ -189,9 +221,19 @@ userSchema.methods.toJSON = function () {
   // Set undefined fields to null so they appear in JSON
   fieldsToInclude.forEach(field => {
     if (userObject[field] === undefined) {
-      userObject[field] = null;
+      // Ensure rented_units is always an array, not null
+      if (field === 'rented_units') {
+        userObject[field] = [];
+      } else {
+        userObject[field] = null;
+      }
     }
   });
+  
+  // Ensure rented_units is always an array
+  if (!Array.isArray(userObject.rented_units)) {
+    userObject.rented_units = userObject.rented_units || [];
+  }
   
   return userObject;
 };
