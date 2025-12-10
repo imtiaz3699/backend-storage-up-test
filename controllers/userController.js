@@ -172,7 +172,9 @@ export const searchCustomers = async (req, res) => {
 // Get user by ID
 export const getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select("-password");
+    const user = await User.findById(req.params.id)
+      .select("-password")
+      .populate('rented_units.unit_id');
 
     if (!user) {
       return res.status(404).json({
@@ -366,6 +368,306 @@ export const updateUser = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error updating user",
+      error: error.message,
+    });
+  }
+};
+
+// Update user's rented units
+export const updateUserRentedUnits = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Check if rented_units is provided
+    if (!req.body.rented_units) {
+      return res.status(400).json({
+        success: false,
+        message: "rented_units field is required",
+      });
+    }
+
+    // Validate that rented_units is an array
+    if (!Array.isArray(req.body.rented_units)) {
+      return res.status(400).json({
+        success: false,
+        message: "rented_units must be an array",
+      });
+    }
+
+    // Validate each rented unit object
+    const validKeys = ['unit_id', 'billing_cycle', 'deposit_amount', 'start_date', 'end_date'];
+    for (let i = 0; i < req.body.rented_units.length; i++) {
+      const rentedUnit = req.body.rented_units[i];
+      const providedKeys = Object.keys(rentedUnit);
+      const invalidKeys = providedKeys.filter(key => !validKeys.includes(key));
+
+      if (invalidKeys.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid keys in rented_units[${i}]: ${invalidKeys.join(', ')}. Only 'unit_id', 'billing_cycle', 'deposit_amount', 'start_date', and 'end_date' are allowed.`
+        });
+      }
+
+      // Validate required fields
+      if (!rentedUnit.unit_id) {
+        return res.status(400).json({
+          success: false,
+          message: `unit_id is required in rented_units[${i}]`
+        });
+      }
+
+      // Convert dates if provided as strings
+      if (rentedUnit.start_date && typeof rentedUnit.start_date === 'string') {
+        rentedUnit.start_date = new Date(rentedUnit.start_date);
+      }
+      if (rentedUnit.end_date && typeof rentedUnit.end_date === 'string') {
+        rentedUnit.end_date = new Date(rentedUnit.end_date);
+      }
+
+      // Validate deposit_amount is a number
+      if (rentedUnit.deposit_amount !== undefined && isNaN(rentedUnit.deposit_amount)) {
+        return res.status(400).json({
+          success: false,
+          message: `deposit_amount must be a number in rented_units[${i}]`
+        });
+      }
+    }
+
+    // Check for any other keys outside rented_units
+    const bodyKeys = Object.keys(req.body);
+    const otherKeys = bodyKeys.filter(key => key !== 'rented_units');
+    if (otherKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Only 'rented_units' field is allowed. Found additional keys: ${otherKeys.join(', ')}`
+      });
+    }
+
+    // Get existing rented units
+    const existingRentedUnits = user.rented_units || [];
+
+    // Process new units: add new ones or update existing ones with same unit_id
+    for (const newUnit of req.body.rented_units) {
+      // Convert dates if provided as strings
+      const processedUnit = { ...newUnit };
+      if (processedUnit.start_date && typeof processedUnit.start_date === 'string') {
+        processedUnit.start_date = new Date(processedUnit.start_date);
+      }
+      if (processedUnit.end_date && typeof processedUnit.end_date === 'string') {
+        processedUnit.end_date = processedUnit.end_date ? new Date(processedUnit.end_date) : null;
+      }
+
+      // Check if unit with this unit_id already exists
+      const existingUnitIndex = existingRentedUnits.findIndex(
+        unit => unit.unit_id && unit.unit_id.toString() === processedUnit.unit_id.toString()
+      );
+
+      if (existingUnitIndex !== -1) {
+        // Update existing unit
+        existingRentedUnits[existingUnitIndex] = {
+          ...existingRentedUnits[existingUnitIndex].toObject(),
+          ...processedUnit
+        };
+      } else {
+        // Add new unit
+        existingRentedUnits.push(processedUnit);
+      }
+    }
+
+    // Update the user's rented_units with merged array
+    user.rented_units = existingRentedUnits;
+    await user.save();
+
+    // Populate unit details for response
+    await user.populate('rented_units.unit_id');
+
+    res.status(200).json({
+      success: true,
+      message: "User rented units updated successfully",
+      data: user,
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID or unit ID",
+      });
+    }
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors,
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error updating user rented units",
+      error: error.message,
+    });
+  }
+};
+
+// Update a specific rented unit for a user
+export const updateUserRentedUnit = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Get old_unit_id from URL parameter
+    const oldUnitId = req.params.unitId;
+
+    // Validate request body structure
+    const validKeys = ['unit_id', 'billing_cycle', 'deposit_amount', 'start_date', 'end_date'];
+    const providedKeys = Object.keys(req.body);
+    const invalidKeys = providedKeys.filter(key => !validKeys.includes(key));
+
+    if (invalidKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid keys: ${invalidKeys.join(', ')}. Only 'unit_id', 'billing_cycle', 'deposit_amount', 'start_date', and 'end_date' are allowed.`
+      });
+    }
+
+    // Validate required fields
+    if (!req.body.unit_id) {
+      return res.status(400).json({
+        success: false,
+        message: "unit_id is required"
+      });
+    }
+
+    // Convert dates if provided as strings
+    const updateData = { ...req.body };
+    if (updateData.start_date && typeof updateData.start_date === 'string') {
+      updateData.start_date = new Date(updateData.start_date);
+    }
+    if (updateData.end_date && typeof updateData.end_date === 'string') {
+      updateData.end_date = updateData.end_date ? new Date(updateData.end_date) : null;
+    }
+
+    // Validate deposit_amount is a number
+    if (updateData.deposit_amount !== undefined && isNaN(updateData.deposit_amount)) {
+      return res.status(400).json({
+        success: false,
+        message: "deposit_amount must be a number"
+      });
+    }
+
+    // Find the unit to update in rented_units array
+    const unitIndex = user.rented_units.findIndex(
+      unit => unit.unit_id && unit.unit_id.toString() === oldUnitId
+    );
+
+    if (unitIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: `Rented unit with unit_id ${oldUnitId} not found for this user`,
+      });
+    }
+
+    // Update the specific unit (merge with existing data)
+    user.rented_units[unitIndex] = {
+      ...user.rented_units[unitIndex].toObject(),
+      ...updateData
+    };
+
+    await user.save();
+
+    // Populate unit details for response
+    await user.populate('rented_units.unit_id');
+
+    res.status(200).json({
+      success: true,
+      message: "User rented unit updated successfully",
+      data: user,
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID or unit ID",
+      });
+    }
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors,
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error updating user rented unit",
+      error: error.message,
+    });
+  }
+};
+
+// Remove a specific rented unit from user
+export const removeUserRentedUnit = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Get unit_id from URL parameter
+    const unitIdToRemove = req.params.unitId;
+
+    // Find the unit index in rented_units array
+    const unitIndex = user.rented_units.findIndex(
+      unit => unit.unit_id && unit.unit_id.toString() === unitIdToRemove
+    );
+
+    if (unitIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: `Rented unit with unit_id ${unitIdToRemove} not found for this user`,
+      });
+    }
+
+    // Remove the unit from the array
+    user.rented_units.splice(unitIndex, 1);
+    await user.save();
+
+    // Populate remaining unit details for response
+    await user.populate('rented_units.unit_id');
+
+    res.status(200).json({
+      success: true,
+      message: "Rented unit removed successfully",
+      data: user,
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID or unit ID",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error removing rented unit",
       error: error.message,
     });
   }
