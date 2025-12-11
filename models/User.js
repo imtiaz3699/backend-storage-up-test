@@ -29,6 +29,65 @@ const rentedUnitSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const subscriptionSchema = new mongoose.Schema({
+  plan: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "BillingPlan",
+    required: true
+  },
+  unit_type: {
+    type: {
+      type: String,
+      trim: true,
+      default: ""
+    },
+    quantity: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    status: {
+      type: Boolean,
+      default: false
+    },
+    frequency: {
+      type: String,
+      trim: true,
+      default: ""
+    },
+    next_invoice_date: {
+      type: Date,
+      default: null
+    },
+    next_invoice_amount: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
+  },
+  status: {
+    type: String,
+    enum: ['active', 'cancelled', 'expired'],
+    default: 'active'
+  },
+  started_at: {
+    type: Date,
+    default: Date.now
+  },
+  ends_at: {
+    type: Date,
+    default: null
+  },
+  cancelled_at: {
+    type: Date,
+    default: null
+  },
+  price_paid: {
+    type: Number,
+    default: 0
+  }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -162,6 +221,15 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    transactions: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: "Transaction",
+      default: []
+    },
+    subscriptions: {
+      type: [subscriptionSchema],
+      default: []
+    },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt fields
@@ -215,7 +283,9 @@ userSchema.methods.toJSON = function () {
     'stripe_customer_id',
     'id_document',
     'contract_copy',
-    'additional_records'
+    'additional_records',
+    'transactions',
+    'subscriptions'
   ];
   
   // Set undefined fields to null so they appear in JSON
@@ -233,6 +303,15 @@ userSchema.methods.toJSON = function () {
   // Ensure rented_units is always an array
   if (!Array.isArray(userObject.rented_units)) {
     userObject.rented_units = userObject.rented_units || [];
+  }
+
+  // Ensure transactions is always an array
+  if (!Array.isArray(userObject.transactions)) {
+    userObject.transactions = userObject.transactions || [];
+  }
+  // Ensure subscriptions is always an array
+  if (!Array.isArray(userObject.subscriptions)) {
+    userObject.subscriptions = userObject.subscriptions || [];
   }
   
   return userObject;

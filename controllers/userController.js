@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import Transaction from "../models/Transaction.js";
 import { getFileUrl } from "../middleware/uploadMiddleware.js";
 import fs from "fs";
 import path from "path";
@@ -174,7 +175,8 @@ export const getUserById = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
       .select("-password")
-      .populate('rented_units.unit_id');
+      .populate('rented_units.unit_id')
+      .populate('subscriptions.plan');
 
     if (!user) {
       return res.status(404).json({
@@ -183,9 +185,25 @@ export const getUserById = async (req, res) => {
       });
     }
 
+    // Fetch transactions related to this user (both move_out and actual move_out)
+    const transactions = await Transaction.find({
+      $or: [
+        { 'move_out_notice_give.customer_id': user._id },
+        { 'actual_move_out_notice.customer_id': user._id }
+      ]
+    }).sort({ createdAt: -1 });
+
+    const userObject = user.toJSON();
+    userObject.transactions = transactions || [];
+
+    // Ensure subscriptions is at least an empty array
+    if (!Array.isArray(userObject.subscriptions)) {
+      userObject.subscriptions = [];
+    }
+
     res.status(200).json({
       success: true,
-      data: user,
+      data: userObject,
     });
   } catch (error) {
     if (error.name === "CastError") {

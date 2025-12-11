@@ -76,6 +76,14 @@ import {
   deleteInvoice
 } from '../controllers/invoiceController.js';
 import {
+  createTransaction,
+  getTransactions,
+  getTransactionById,
+  updateTransaction,
+  deleteTransaction
+} from '../controllers/transactionController.js';
+import { getActivity } from '../controllers/userActivityController.js';
+import {
   getDailyProcessingStatus,
   runDailyProcessingJob,
   getDailyProcessingDashboard,
@@ -182,6 +190,16 @@ router.get('/daily-processing/status', getDailyProcessingStatus);          // Ge
 router.get('/daily-processing/dashboard', getDailyProcessingDashboard);    // Get comprehensive dashboard
 router.post('/daily-processing/run/:jobName', runDailyProcessingJob);      // Manually run specific job
 router.get('/daily-processing/stats/:statType', getJobStats);              // Get specific statistics
+
+// Admin Transaction Management routes
+router.post('/transactions', createTransaction);                          // Create transaction
+router.get('/transactions', getTransactions);                             // List transactions with pagination
+router.get('/transactions/:id', getTransactionById);                      // Get transaction by ID
+router.put('/transactions/:id', updateTransaction);                       // Update transaction
+router.delete('/transactions/:id', deleteTransaction);                    // Delete transaction
+
+// Admin Activity routes
+router.get('/activity', getActivity);                                     // Get user activities (filterable)
 
 export default router;
 

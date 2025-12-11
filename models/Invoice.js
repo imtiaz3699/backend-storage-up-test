@@ -8,6 +8,11 @@ const invoiceSchema = new mongoose.Schema(
       unique: true,
       uppercase: true,
     },
+    invoice_title: {
+      type: String,
+      trim: true,
+      default: ""
+    },
     customer_name: {
       type: String,
       required: [true, "Customer name is required"],

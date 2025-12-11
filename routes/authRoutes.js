@@ -13,6 +13,7 @@ import {
   testEmail,
   updatePassword
 } from '../controllers/authController.js';
+import { createActivity, getMyActivity, getUserActivityById } from '../controllers/userActivityController.js';
 import { tokenMiddleware } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -30,11 +31,14 @@ router.post('/login', login);        // Login user (client side)
 router.post('/logout', tokenMiddleware, logout);      // Logout user
 router.get('/me', tokenMiddleware, getMe);            // Get current user (protected)
 router.post('/refresh-token', refreshToken);         // Refresh expired token
-router.put('/update-password', tokenMiddleware, updatePassword); // Update password (protected)
+router.put('/update-password', tokenMiddleware, updatePassword);// Update password (protected)
 router.post('/forgot-password', forgotPassword);      // Initiate password reset
 router.post('/test-email', testEmail);                // Test email configuration (for debugging)
 router.get('/reset-password/verify', verifyResetToken); // Verify password reset token
 router.post('/reset-password', resetPassword);        // Reset password
+router.post('/activity', tokenMiddleware, createActivity); // Create activity (protected)
+router.get('/activity', tokenMiddleware, getMyActivity);   // Get current user's activity (protected)
+router.get('/activity/:userId', tokenMiddleware, getUserActivityById); // Get activity for userId (self or admin)
 
 // Admin Authentication routes
 router.post('/admin/signup', adminSignup);  // Register new admin user

@@ -350,24 +350,24 @@ export const runAllDailyProcessingJobs = async (req, res) => {
       return systemJob?.enabled;
     });
 
-    if (enabledJobs.length === 0) {
+    if (enabledJobs?.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'No jobs are currently enabled'
+        message: 'No jobs are currently enabled.'
       });
     }
 
-    console.log(`📋 Running ${enabledJobs.length} enabled jobs: ${enabledJobs.join(', ')}`);
+    console.log(`📋 Running ${enabledJobs?.length} enabled jobs: ${enabledJobs?.join(', ')}`);
     console.log(`📅 Processing date: ${processingDate.toISOString().split('T')[0]}`);
 
     // Run jobs in optimal order (by priority)
-    const orderedJobs = enabledJobs.sort((a, b) => 
-      JOB_DEFINITIONS[a].priority - JOB_DEFINITIONS[b].priority
+    const orderedJobs = enabledJobs?.sort((a, b) => 
+      JOB_DEFINITIONS[a]?.priority - JOB_DEFINITIONS[b]?.priority
     );
 
     for (const jobId of orderedJobs) {
       try {
-        console.log(`▶️  Starting ${JOB_DEFINITIONS[jobId].name}...`);
+        console.log(`▶️  Starting ${JOB_DEFINITIONS[jobId]?.name}...`);
         const jobStartTime = Date.now();
         
         const result = await runJob(jobId, processingDate);
