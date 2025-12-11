@@ -1,0 +1,22 @@
+# Add these environment variables to your .env file for Daily Processing
+
+# Daily Processing Configuration
+DAILY_PROCESSING_ENABLED=true
+TIMEZONE=America/New_York
+
+# Job-specific toggles (all default to true if not specified)
+OVERDUE_DETECTION_ENABLED=true
+PAYMENT_REMINDERS_ENABLED=true
+FINANCIAL_SUMMARY_ENABLED=true
+LATE_FEES_ENABLED=true
+LEASE_EXPIRATION_ENABLED=true
+
+# Late Fee Configuration
+DEFAULT_LATE_FEE_MINIMUM=25.00
+DEFAULT_LATE_FEE_PERCENTAGE=5.0
+LATE_FEE_GRACE_PERIOD_DAYS=5
+HIGH_VALUE_OVERDUE_THRESHOLD=500
+
+# Financial Reporting
+DAILY_FINANCIAL_REPORT_EMAIL=true
+ADMIN_EMAIL_RECIPIENTS=admin@yourcompany.com,manager@yourcompany.com

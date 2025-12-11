@@ -75,6 +75,15 @@ import {
   updateInvoice,
   deleteInvoice
 } from '../controllers/invoiceController.js';
+import {
+  getDailyProcessingStatus,
+  runDailyProcessingJob,
+  getDailyProcessingDashboard,
+  getJobStats,
+  getDailyProcessingJobs,
+  runAllDailyProcessingJobs,
+  getDailyProcessingResults
+} from '../jobs/admin/jobController.js';
 import { tokenMiddleware, protectAdmin } from '../middleware/authMiddleware.js';
 import { uploadLocationImages } from '../middleware/uploadMiddleware.js';
 
@@ -141,13 +150,13 @@ router.delete('/billing-plans/:id', deleteBillingPlan);       // Delete billing 
 // Admin Notice Setup Management routes
 router.post('/notice-setups/notice-design', createNoticeDesignOnly);// Create notice setup with notice_design only
 router.post('/notice-setups/notice-charges', createNoticeCharges);// Create notice charges-only record
-router.post('/notice-setups', createNoticeSetup);             // Create notice setup
-router.get('/notice-setups', getNoticeSetups);                // List notice setups
-router.get('/notice-setups/:id', getNoticeSetupById);         // Get notice setup by ID
-router.put('/notice-setups/:id/notice-design', updateNoticeDesign);  // Update notice design separately (MUST be before /:id route)
-router.put('/notice-setups/:id/notice-charges', updateNoticeCharges);  // Update notice charges separately
-router.put('/notice-setups/:id', updateNoticeSetup);          // Update notice setup
-router.delete('/notice-setups/:id', deleteNoticeSetup);       // Delete notice setup
+router.post('/notice-setups', createNoticeSetup);                 // Create notice setup
+router.get('/notice-setups', getNoticeSetups);                    // List notice setups
+router.get('/notice-setups/:id', getNoticeSetupById);             // Get notice setup by ID
+router.put('/notice-setups/:id/notice-design', updateNoticeDesign);// Update notice design separately (MUST be before /:id route)
+router.put('/notice-setups/:id/notice-charges', updateNoticeCharges);// Update notice charges separately
+router.put('/notice-setups/:id', updateNoticeSetup);              // Update notice setup
+router.delete('/notice-setups/:id', deleteNoticeSetup);           // Delete notice setup
 
 // Admin Notice Charge Management routes
 router.post('/notice-charges', createNoticeCharge);             // Create notice charge
@@ -165,5 +174,16 @@ router.get('/invoices/:id', getInvoiceById);                    // Get invoice b
 router.put('/invoices/:id', updateInvoice);                     // Update invoice
 router.delete('/invoices/:id', deleteInvoice);                  // Delete invoice
 
+// Admin Daily Processing Management routes
+router.get('/daily-processing/jobs', getDailyProcessingJobs);              // List all available jobs (for frontend)
+router.post('/daily-processing/generate', runAllDailyProcessingJobs);      // Run ALL jobs (Generate Daily Processing button)
+router.get('/daily-processing/results', getDailyProcessingResults);        // Get processing results with invoices
+router.get('/daily-processing/status', getDailyProcessingStatus);          // Get job status
+router.get('/daily-processing/dashboard', getDailyProcessingDashboard);    // Get comprehensive dashboard
+router.post('/daily-processing/run/:jobName', runDailyProcessingJob);      // Manually run specific job
+router.get('/daily-processing/stats/:statType', getJobStats);              // Get specific statistics
+
 export default router;
+
+
 

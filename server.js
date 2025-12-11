@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import routes from "./routes/index.js";
+import { initializeDailyProcessing } from "./jobs/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -149,6 +150,14 @@ app.listen(PORT, async () => {
         `📧 ⚠️  Email service initialization error:`,
         error.message
       );
+    }
+
+    // Initialize Daily Processing Jobs
+    console.log(`📅 Initializing Daily Processing System...`);
+    try {
+      initializeDailyProcessing();
+    } catch (error) {
+      console.error(`📅 ⚠️  Daily Processing initialization error:`, error.message);
     }
   } else {
     console.log(
