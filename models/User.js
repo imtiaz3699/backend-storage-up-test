@@ -66,6 +66,49 @@ const subscriptionSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const chargeSchema = new mongoose.Schema({
+  date: {
+    type: Date,
+    default: null
+  },
+  analysis_code: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "AnalysisCode"
+  },
+  quantity: {
+    type: Number,
+    default: 20,
+    min: 0
+  },
+  description: {
+    type: String,
+    trim: true,
+    default: ""
+  },
+  charge_amount: {
+    type: Number,
+    default: 50,
+    min: 0
+  },
+  invoice_narration: {
+    type: String,
+    trim: true,
+    default: "narration"
+  },
+  from: {
+    type: Date,
+    default: null
+  },
+  to: {
+    type: Date,
+    default: null
+  },
+  print_this_info_on_invoice: {
+    type: Boolean,
+    default: false
+  }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -211,6 +254,10 @@ const userSchema = new mongoose.Schema(
     autopay_enabled: {
       type: Boolean,
       default: false
+    },
+    charges: {
+      type: chargeSchema,
+      default: null
     }
   },
   {
@@ -267,14 +314,15 @@ userSchema.methods.toJSON = function () {
     'contract_copy',
     'additional_records',
     'transactions',
-    'subscriptions'
+    'subscriptions',
+    'charges'
   ];
   
   // Set undefined fields to null so they appear in JSON
   fieldsToInclude.forEach(field => {
     if (userObject[field] === undefined) {
-      // Ensure rented_units is always an array, not null
-      if (field === 'rented_units') {
+      // Ensure rented_units and subscriptions are always arrays, not null
+      if (field === 'rented_units' || field === 'subscriptions') {
         userObject[field] = [];
       } else {
         userObject[field] = null;
@@ -294,6 +342,10 @@ userSchema.methods.toJSON = function () {
   // Ensure subscriptions is always an array
   if (!Array.isArray(userObject.subscriptions)) {
     userObject.subscriptions = userObject.subscriptions || [];
+  }
+  // Ensure charges is an object or null
+  if (userObject.charges === undefined) {
+    userObject.charges = null;
   }
   
   return userObject;

@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { createUser, getAllUsers, getUserById, updateUser, deleteUser, searchCustomers } from '../controllers/userController.js';
+import { createUser, getAllUsers, getUserById, updateUser, deleteUser, searchCustomers, updateUserCharges, undoUserCharges } from '../controllers/userController.js';
 import { uploadUserDocuments } from '../middleware/uploadMiddleware.js';
 
 const router = express.Router();
@@ -35,6 +35,8 @@ const handleUploadError = (err, req, res, next) => {
 router.post('/', createUser);           // Create user
 router.get('/search', searchCustomers); // Search customers by name (for dropdown)
 router.get('/', getAllUsers);           // Get all users
+router.put('/:id/charges', updateUserCharges);  // Update user charges only (must be before /:id)
+router.delete('/:id/charges', undoUserCharges);  // Undo (clear) user charges (must be before /:id)
 router.get('/:id', getUserById);        // Get user by ID
 router.put('/:id', uploadUserDocuments, handleUploadError, updateUser);         // Update user (with file upload support)
 router.delete('/:id', deleteUser);      // Delete user

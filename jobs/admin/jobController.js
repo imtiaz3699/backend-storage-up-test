@@ -229,11 +229,17 @@ export const getDailyProcessingJobs = async (req, res) => {
     
     // Optional processing date for as-of logic
     let processingDate = new Date();
+    // Normalize to UTC midnight for date-only comparison (MongoDB dates are in UTC)
+    processingDate.setUTCHours(0, 0, 0, 0);
+    processingDate.setUTCMinutes(0);
+    processingDate.setUTCSeconds(0);
+    processingDate.setUTCMilliseconds(0);
+    
     if (req.query.date) {
-      const d = new Date(req.query.date);
+      const d = new Date(req.query.date + 'T00:00:00.000Z'); // Parse as UTC
       if (!isNaN(d.getTime())) {
-        d.setHours(0, 0, 0, 0);
         processingDate = d;
+        processingDate.setUTCHours(0, 0, 0, 0);
       }
     }
 
@@ -249,10 +255,30 @@ export const getDailyProcessingJobs = async (req, res) => {
     const formattedInvoices = allInvoices
       .map(invoice => {
         const due = invoice.due_date ? new Date(invoice.due_date) : null;
-        let virtualStatus = invoice.status;
+        let virtualStatus = 'pending'; // Default to pending
+        
         if (due) {
-          if (due < processingDate) virtualStatus = 'overdue';
-          else virtualStatus = 'pending';
+          // Normalize both dates to UTC midnight for accurate date-only comparison
+          // MongoDB stores dates in UTC, so we must use UTC methods
+          const dueDateOnly = new Date(due);
+          dueDateOnly.setUTCHours(0, 0, 0, 0);
+          dueDateOnly.setUTCMinutes(0);
+          dueDateOnly.setUTCSeconds(0);
+          dueDateOnly.setUTCMilliseconds(0);
+          
+          const processingDateOnly = new Date(processingDate);
+          processingDateOnly.setUTCHours(0, 0, 0, 0);
+          processingDateOnly.setUTCMinutes(0);
+          processingDateOnly.setUTCSeconds(0);
+          processingDateOnly.setUTCMilliseconds(0);
+          
+          // Invoice is overdue if due date is before processing date (strictly before, not equal)
+          if (dueDateOnly.getTime() < processingDateOnly.getTime()) {
+            virtualStatus = 'overdue';
+          } else {
+            // Due date is today or in the future = pending
+            virtualStatus = 'pending';
+          }
         }
         return {
           invoice_id: invoice.invoice_id,
@@ -398,20 +424,27 @@ export const runAllDailyProcessingJobs = async (req, res) => {
       });
     }
 
-    // Run-lock per processingDate
+    // Run-lock per processingDate (can be bypassed with ?force=true for testing)
+    const force = req.query.force === 'true' || req.body.force === true;
     const processingDateKey = processingDate.toISOString().split('T')[0];
     const existingRun = await RunLog.findOne({ processingDate: processingDateKey });
-    if (existingRun && existingRun.status === 'success') {
-      return res.status(400).json({
-        success: false,
-        message: `Daily processing already completed for ${processingDateKey}`
-      });
-    }
-    if (existingRun && existingRun.status === 'in_progress') {
-      return res.status(429).json({
-        success: false,
-        message: `Daily processing already in progress for ${processingDateKey}`
-      });
+    
+    // Only check for existing runs if not forcing
+    if (!force) {
+      if (existingRun && existingRun.status === 'success') {
+        return res.status(400).json({
+          success: false,
+          message: `Daily processing already completed for ${processingDateKey}. Add ?force=true to rerun.`
+        });
+      }
+      if (existingRun && existingRun.status === 'in_progress') {
+        return res.status(429).json({
+          success: false,
+          message: `Daily processing already in progress for ${processingDateKey}`
+        });
+      }
+    } else {
+      console.log(`⚠️  Force mode enabled - allowing rerun for ${processingDateKey}`);
     }
 
     // create/overwrite log as in_progress

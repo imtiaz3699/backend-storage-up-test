@@ -744,6 +744,179 @@ export const removeUserRentedUnit = async (req, res) => {
   }
 };
 
+// Update user's charges
+export const updateUserCharges = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Check if charges is provided
+    if (!req.body.charges) {
+      return res.status(400).json({
+        success: false,
+        message: "charges field is required",
+      });
+    }
+
+    // Validate that charges is an object
+    if (typeof req.body.charges !== 'object' || Array.isArray(req.body.charges)) {
+      return res.status(400).json({
+        success: false,
+        message: "charges must be an object",
+      });
+    }
+
+    // Validate charge object keys
+    const validKeys = ['date', 'analysis_code', 'quantity', 'description', 'charge_amount', 'invoice_narration', 'from', 'to', 'print_this_info_on_invoice'];
+    const providedKeys = Object.keys(req.body.charges);
+    const invalidKeys = providedKeys.filter(key => !validKeys.includes(key));
+
+    if (invalidKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid keys in charges: ${invalidKeys.join(', ')}. Only 'date', 'analysis_code', 'quantity', 'description', 'charge_amount', 'invoice_narration', 'from', 'to', and 'print_this_info_on_invoice' are allowed.`
+      });
+    }
+
+    // Process charge object
+    const processedCharge = { ...req.body.charges };
+    
+    // Convert dates if provided as strings
+    if (processedCharge.date && typeof processedCharge.date === 'string') {
+      processedCharge.date = new Date(processedCharge.date);
+    } else if (processedCharge.date === null || processedCharge.date === '') {
+      processedCharge.date = null;
+    }
+    
+    if (processedCharge.from && typeof processedCharge.from === 'string') {
+      processedCharge.from = new Date(processedCharge.from);
+    } else if (processedCharge.from === null || processedCharge.from === '') {
+      processedCharge.from = null;
+    }
+    
+    if (processedCharge.to && typeof processedCharge.to === 'string') {
+      processedCharge.to = new Date(processedCharge.to);
+    } else if (processedCharge.to === null || processedCharge.to === '') {
+      processedCharge.to = null;
+    }
+
+    // Validate numeric fields
+    if (processedCharge.quantity !== undefined && isNaN(processedCharge.quantity)) {
+      return res.status(400).json({
+        success: false,
+        message: "quantity must be a number"
+      });
+    }
+    if (processedCharge.charge_amount !== undefined && isNaN(processedCharge.charge_amount)) {
+      return res.status(400).json({
+        success: false,
+        message: "charge_amount must be a number"
+      });
+    }
+
+    // Validate boolean field
+    if (processedCharge.print_this_info_on_invoice !== undefined && typeof processedCharge.print_this_info_on_invoice !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: "print_this_info_on_invoice must be a boolean"
+      });
+    }
+
+    // Check for any other keys outside charges
+    const bodyKeys = Object.keys(req.body);
+    const otherKeys = bodyKeys.filter(key => key !== 'charges');
+    if (otherKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Only 'charges' field is allowed. Found additional keys: ${otherKeys.join(', ')}`
+      });
+    }
+
+    // Update the user's charges with the new object
+    user.charges = processedCharge;
+    await user.save();
+
+    // Populate analysis_code for response
+    await user.populate('charges.analysis_code');
+
+    res.status(200).json({
+      success: true,
+      message: "User charges updated successfully",
+      data: user,
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID or analysis code ID",
+      });
+    }
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors,
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error updating user charges",
+      error: error.message,
+    });
+  }
+};
+
+// Undo (clear) user's charges
+export const undoUserCharges = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Check if charges exist
+    if (!user.charges || user.charges === null) {
+      return res.status(400).json({
+        success: false,
+        message: "No charges to undo. Charges field is already empty.",
+      });
+    }
+
+    // Clear the charges by setting to null
+    user.charges = null;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "User charges undone successfully (charges cleared)",
+      data: user,
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error undoing user charges",
+      error: error.message,
+    });
+  }
+};
+
 // Delete user
 export const deleteUser = async (req, res) => {
   try {
