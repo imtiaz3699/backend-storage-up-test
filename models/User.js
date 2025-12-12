@@ -30,61 +30,39 @@ const rentedUnitSchema = new mongoose.Schema({
 }, { _id: false });
 
 const subscriptionSchema = new mongoose.Schema({
-  plan: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "BillingPlan",
-    required: true
+  type: {
+    type: String,
+    trim: true,
+    default: ""
   },
-  unit_type: {
-    type: {
-      type: String,
-      trim: true,
-      default: ""
-    },
-    quantity: {
-      type: Number,
-      default: 0,
-      min: 0
-    },
-    status: {
-      type: Boolean,
-      default: false
-    },
-    frequency: {
-      type: String,
-      trim: true,
-      default: ""
-    },
-    next_invoice_date: {
-      type: Date,
-      default: null
-    },
-    next_invoice_amount: {
-      type: Number,
-      default: 0,
-      min: 0
-    }
+  quantity: {
+    type: Number,
+    default: 0,
+    min: 0
   },
+// Overdue Detection: Marks any pending invoices with due_date before today as overdue.
+// Late Fees: Applies late-fee invoices to those overdue invoices (based on your late-fee rules).
+// Payment Reminders: Sends reminders for pending invoices that are due today/tomorrow/soon.
+// Lease Expiration: Processes leases that expire today (and any configured reminders).
+// Financial Summary: Generates today’s financial summary.
   status: {
     type: String,
-    enum: ['active', 'cancelled', 'expired'],
+    enum: ['active', 'cancelled'],
     default: 'active'
   },
-  started_at: {
-    type: Date,
-    default: Date.now
+  frequency: {
+    type: String,
+    trim: true,
+    default: ""
   },
-  ends_at: {
-    type: Date,
-    default: null
-  },
-  cancelled_at: {
+  next_invoice_date: {
     type: Date,
     default: null
   },
-  price_paid: {
+  next_invoice_amount: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   }
 }, { _id: false });
 
@@ -230,6 +208,10 @@ const userSchema = new mongoose.Schema(
       type: [subscriptionSchema],
       default: []
     },
+    autopay_enabled: {
+      type: Boolean,
+      default: false
+    }
   },
   {
     timestamps: true, // Adds createdAt and updatedAt fields

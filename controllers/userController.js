@@ -175,8 +175,7 @@ export const getUserById = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
       .select("-password")
-      .populate('rented_units.unit_id')
-      .populate('subscriptions.plan');
+      .populate('rented_units.unit_id');
 
     if (!user) {
       return res.status(404).json({
@@ -186,12 +185,40 @@ export const getUserById = async (req, res) => {
     }
 
     // Fetch transactions related to this user (both move_out and actual move_out)
-    const transactions = await Transaction.find({
+    let transactions = await Transaction.find({
       $or: [
         { 'move_out_notice_give.customer_id': user._id },
         { 'actual_move_out_notice.customer_id': user._id }
       ]
     }).sort({ createdAt: -1 });
+
+    // If no transactions exist, return sample (non-persisted) data for frontend integration
+    if (!transactions || transactions.length === 0) {
+      const now = new Date();
+      const inThreeDays = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
+      transactions = [
+        {
+          _id: '64f1f77bcf86cd7994390001',
+          status: 'pending',
+          move_out_notice_give: {
+            date: now.toISOString(),
+            balance_owning: 1043,
+            other_charges: 'Cleaning fee',
+            customer_id: user._id
+          },
+          actual_move_out_notice: {
+            date: inThreeDays.toISOString(),
+            reverse_deposit: 500,
+            final_amount_owed: 543,
+            customer_id: user._id
+          },
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+          sample: true
+        }
+      ];
+    }
 
     const userObject = user.toJSON();
     userObject.transactions = transactions || [];
@@ -199,6 +226,32 @@ export const getUserById = async (req, res) => {
     // Ensure subscriptions is at least an empty array
     if (!Array.isArray(userObject.subscriptions)) {
       userObject.subscriptions = [];
+    }
+
+    // If no subscriptions exist, add sample (non-persisted) subscriptions for frontend integration
+    if (!userObject.subscriptions || userObject.subscriptions.length === 0) {
+      userObject.subscriptions = [
+        {
+          _id: '64f1f77bcf86cd7994391001',
+          type: '6 × 8 - 2.8 DH',
+          quantity: 2,
+          status: 'active',
+          frequency: 'monthly',
+          next_invoice_date: '2025-10-01T00:00:00.000Z',
+          next_invoice_amount: 33000,
+          sample: true
+        },
+        {
+          _id: '64f1f77bcf86cd7994391002',
+          type: '6 × 8 - 2.8 DH',
+          quantity: 1,
+          status: 'cancelled',
+          frequency: 'monthly',
+          next_invoice_date: null,
+          next_invoice_amount: 0,
+          sample: true
+        }
+      ];
     }
 
     res.status(200).json({

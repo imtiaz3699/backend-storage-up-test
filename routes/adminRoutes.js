@@ -83,6 +83,7 @@ import {
   deleteTransaction
 } from '../controllers/transactionController.js';
 import { getActivity } from '../controllers/userActivityController.js';
+import { previewCharges } from '../controllers/chargesController.js';
 import {
   getDailyProcessingStatus,
   runDailyProcessingJob,
@@ -200,6 +201,9 @@ router.delete('/transactions/:id', deleteTransaction);                    // Del
 
 // Admin Activity routes
 router.get('/activity', getActivity);                                     // Get user activities (filterable)
+
+// Admin Charges preview (non-persisted)
+router.get('/charges/preview', previewCharges);                           // Preview rent/prorated charges for a date
 
 export default router;
 

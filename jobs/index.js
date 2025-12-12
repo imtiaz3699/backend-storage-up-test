@@ -5,6 +5,7 @@ import { paymentReminderEmails } from './notifications/paymentReminders.js';
 import { dailyFinancialSummary } from './reporting/financialSummary.js';
 import { lateFeesProcessor } from './invoicing/lateFees.js';
 import { leaseExpirationProcessor } from './units/leaseExpiration.js';
+import { autopayProcessor } from './autopay/autopayProcessor.js';
 
 // Job configuration
 const JOB_CONFIG = {
@@ -17,7 +18,8 @@ const JOB_CONFIG = {
     paymentReminders: process.env.PAYMENT_REMINDERS_ENABLED !== 'false',
     financialSummary: process.env.FINANCIAL_SUMMARY_ENABLED !== 'false',
     lateFees: process.env.LATE_FEES_ENABLED !== 'false',
-    leaseExpiration: process.env.LEASE_EXPIRATION_ENABLED !== 'false'
+    leaseExpiration: process.env.LEASE_EXPIRATION_ENABLED !== 'false',
+    autopay: process.env.AUTOPAY_ENABLED !== 'false'
   }
 };
 
@@ -51,7 +53,7 @@ const executeJob = async (jobName, jobFunction) => {
   const startTime = Date.now();
 
   try {
-    const result = await jobFunction();
+    const result = await jobFunction(currentProcessingDate || undefined);
     const duration = Date.now() - startTime;
     
     logJobExecution(jobName, 'SUCCESS', {
@@ -123,6 +125,15 @@ export const initializeDailyProcessing = () => {
     name: 'daily-financial-summary'
   });
 
+  // 6. Autopay Processor - Runs at 6:00 AM daily (placeholder without charging)
+  cron.schedule('0 6 * * *', () => {
+    executeJob('autopay', autopayProcessor);
+  }, {
+    scheduled: true,
+    timezone: JOB_CONFIG.timezone,
+    name: 'autopay-processor'
+  });
+
   console.log(`📅 Daily Processing: ${Object.keys(JOB_CONFIG.jobs).filter(job => JOB_CONFIG.jobs[job]).length} jobs scheduled successfully`);
   console.log(`🕐 Timezone: ${JOB_CONFIG.timezone}`);
   
@@ -139,7 +150,8 @@ export const runJob = async (jobName, processingDate = null) => {
     paymentReminders: paymentReminderEmails,
     financialSummary: dailyFinancialSummary,
     lateFees: lateFeesProcessor,
-    leaseExpiration: leaseExpirationProcessor
+    leaseExpiration: leaseExpirationProcessor,
+    autopay: autopayProcessor
   };
 
   if (!jobs[jobName]) {

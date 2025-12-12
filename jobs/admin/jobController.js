@@ -4,6 +4,7 @@ import { getOverdueStats } from '../invoicing/overdueDetection.js';
 import { getLateFeeStats } from '../invoicing/lateFees.js';
 import { getFinancialSummary } from '../reporting/financialSummary.js';
 import { getLeaseExpirationStats } from '../units/leaseExpiration.js';
+import RunLog from '../../models/RunLog.js';
 import Invoice from '../../models/Invoice.js';
 
 // Job definitions for frontend display
@@ -52,6 +53,15 @@ const JOB_DEFINITIONS = {
     priority: 5,
     estimatedDuration: '45 seconds',
     icon: '📊'
+  },
+  autopay: {
+    id: 'autopay',
+    name: 'Autopay Processor',
+    description: 'Identify autopay-enabled users and summarize outstanding balances (placeholder, no charges in dev)',
+    category: 'payments',
+    priority: 6,
+    estimatedDuration: '1 minute',
+    icon: '🤖'
   }
 };
 
@@ -217,6 +227,16 @@ export const getDailyProcessingJobs = async (req, res) => {
   try {
     const systemStatus = getJobsStatus();
     
+    // Optional processing date for as-of logic
+    let processingDate = new Date();
+    if (req.query.date) {
+      const d = new Date(req.query.date);
+      if (!isNaN(d.getTime())) {
+        d.setHours(0, 0, 0, 0);
+        processingDate = d;
+      }
+    }
+
     // Fetch invoices with relevant information for daily processing
     const allInvoices = await Invoice.find({
       status: { $in: ['pending', 'overdue'] }
@@ -225,15 +245,36 @@ export const getDailyProcessingJobs = async (req, res) => {
       .sort({ due_date: 1, createdAt: -1 })
       .limit(100);
 
-    // Format invoices with requested fields
-    const formattedInvoices = allInvoices.map(invoice => ({
-      invoice_id: invoice.invoice_id,
-      total: invoice.amount,
-      issue_date: invoice.issue_date,
-      due_date: invoice.due_date,
-      status: invoice.status,
-      customer_name: invoice.customer_name
-    }));
+    // Format invoices with requested fields and recompute status as-of processingDate
+    const formattedInvoices = allInvoices
+      .map(invoice => {
+        const due = invoice.due_date ? new Date(invoice.due_date) : null;
+        let virtualStatus = invoice.status;
+        if (due) {
+          if (due < processingDate) virtualStatus = 'overdue';
+          else virtualStatus = 'pending';
+        }
+        return {
+          invoice_id: invoice.invoice_id,
+          total: invoice.amount,
+          issue_date: invoice.issue_date,
+          due_date: invoice.due_date,
+          status: virtualStatus,
+          customer_name: invoice.customer_name
+        };
+      })
+      // keep only pending/overdue as-of the processing date
+      .filter(inv => ['pending', 'overdue'].includes(inv.status));
+
+    // If caller only wants invoices, return them directly (non-breaking optional behavior)
+    if (req.query.invoicesOnly === 'true') {
+      return res.status(200).json({
+        success: true,
+        count: formattedInvoices.length,
+        data: formattedInvoices,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // Combine job definitions with current system status and add invoice data
     const jobs = Object.keys(JOB_DEFINITIONS).map(jobId => {
@@ -357,6 +398,29 @@ export const runAllDailyProcessingJobs = async (req, res) => {
       });
     }
 
+    // Run-lock per processingDate
+    const processingDateKey = processingDate.toISOString().split('T')[0];
+    const existingRun = await RunLog.findOne({ processingDate: processingDateKey });
+    if (existingRun && existingRun.status === 'success') {
+      return res.status(400).json({
+        success: false,
+        message: `Daily processing already completed for ${processingDateKey}`
+      });
+    }
+    if (existingRun && existingRun.status === 'in_progress') {
+      return res.status(429).json({
+        success: false,
+        message: `Daily processing already in progress for ${processingDateKey}`
+      });
+    }
+
+    // create/overwrite log as in_progress
+    await RunLog.findOneAndUpdate(
+      { processingDate: processingDateKey },
+      { status: 'in_progress', startedAt: new Date(), jobs: {} },
+      { upsert: true }
+    );
+
     console.log(`📋 Running ${enabledJobs?.length} enabled jobs: ${enabledJobs?.join(', ')}`);
     console.log(`📅 Processing date: ${processingDate.toISOString().split('T')[0]}`);
 
@@ -416,6 +480,17 @@ export const runAllDailyProcessingJobs = async (req, res) => {
       results: results,
       errors: errors.length > 0 ? errors : undefined
     };
+
+    // Update run log
+    await RunLog.findOneAndUpdate(
+      { processingDate: processingDateKey },
+      {
+        status: failureCount === 0 ? 'success' : 'failed',
+        finishedAt: new Date(),
+        jobs: results,
+        message: failureCount === 0 ? 'Completed' : 'Completed with failures'
+      }
+    );
 
     console.log(`🏁 Daily processing completed: ${successCount}/${enabledJobs.length} jobs successful in ${totalDuration}ms`);
 

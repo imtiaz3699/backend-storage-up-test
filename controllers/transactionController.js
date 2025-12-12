@@ -195,7 +195,39 @@ export const getTransactions = async (req, res) => {
     // Get total count
     const total = await Transaction.countDocuments(filter);
 
-    // Get paginated transactions
+    // If no transactions exist, return sample data (do not persist)
+    if (total === 0) {
+      const sampleTransactions = [
+        {
+          _id: '64f1f77bcf86cd7994390001',
+          status: 'pending',
+          move_out_notice_give: {
+            date: new Date().toISOString(),
+            balance_owning: 1043,
+            other_charges: 'Cleaning fee',
+            customer_id: '507f1f77bcf86cd799439011'
+          },
+          actual_move_out_notice: {
+            date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+            reverse_deposit: 500,
+            final_amount_owed: 543,
+            customer_id: '507f1f77bcf86cd799439011'
+          },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ];
+
+      return res.status(200).json({
+        success: true,
+        count: sampleTransactions.length,
+        pagination: buildPagination(1, sampleTransactions.length, sampleTransactions.length),
+        data: sampleTransactions,
+        sample: true
+      });
+    }
+
+    // Get paginated transactions from DB
     const transactions = await Transaction.find(filter)
       .populate('move_out_notice_give.customer_id', 'name email phoneNumber')
       .populate('actual_move_out_notice.customer_id', 'name email phoneNumber')
