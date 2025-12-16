@@ -7,9 +7,11 @@ import AnalysisCode from './AnalysisCode.js';
 import ReceiptAnalysisCode from './ReceiptAnalysisCode.js';
 import BillingPlan from './BillingPlan.js';
 import NoticeSetup from './NoticeSetup.js';
+import Payment from './Payment.js';
 import NoticeCharge from './NoticeCharge.js';
 import Invoice from './Invoice.js';
 import PaymentMethod from './PaymentMethod.js';
+import Payment from './Payment.js';
 // import Product from './Product.js';
 
 export {
@@ -24,8 +26,10 @@ export {
   NoticeCharge,
   Invoice,
   PaymentMethod,
+  Payment,
   // Product
 };
+
 
 
 

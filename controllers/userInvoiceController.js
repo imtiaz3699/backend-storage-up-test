@@ -1,4 +1,41 @@
 import Invoice from "../models/Invoice.js";
+import getStripe from "../config/stripe.js";
+
+// Helper function to get payment link for an invoice
+const getPaymentLinkForInvoice = async (invoice) => {
+  // Only generate payment link for pending invoices with amount > 0
+  if (invoice.status !== 'pending' || invoice.amount <= 0) {
+    return null;
+  }
+
+  try {
+    const stripe = getStripe();
+
+    // If invoice already has a checkout session, check if it's still valid
+    if (invoice.stripe_checkout_session_id) {
+      try {
+        const session = await stripe.checkout.sessions.retrieve(
+          invoice.stripe_checkout_session_id
+        );
+        
+        // If session is still open, return its URL
+        if (session.status === 'open') {
+          return session.url;
+        }
+      } catch (error) {
+        // Session might not exist, continue to create a new one
+        console.log('Existing session not found, will create new one when needed');
+      }
+    }
+
+    // Session doesn't exist or is expired - will be created when user requests payment
+    // Return null to indicate payment link needs to be generated
+    return null;
+  } catch (error) {
+    console.error(`Error getting payment link for invoice ${invoice.invoice_id}:`, error);
+    return null;
+  }
+};
 
 const buildPagination = (page, limit, total) => {
   const totalPages = Math.ceil(total / limit) || 1;
@@ -94,6 +131,16 @@ export const getUserInvoices = async (req, res) => {
       .filter((inv) => inv.status !== "paid" && inv.status !== "cancelled")
       .reduce((sum, inv) => sum + (inv.amount || 0), 0);
 
+    // Add payment links to paginated invoices
+    const invoicesWithPaymentLinks = await Promise.all(
+      paginatedInvoices.map(async (invoice) => {
+        const invoiceObj = invoice.toObject();
+        const paymentLink = await getPaymentLinkForInvoice(invoice);
+        invoiceObj.payment_link = paymentLink;
+        return invoiceObj;
+      })
+    );
+
     res.status(200).json({
       success: true,
       data: {
@@ -106,7 +153,7 @@ export const getUserInvoices = async (req, res) => {
           total_collected: totalCollected,
           outstanding: outstanding,
         },
-        invoices: paginatedInvoices,
+        invoices: invoicesWithPaymentLinks,
         pagination: buildPagination(page, limit, totalCount)
       },
     });

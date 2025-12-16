@@ -1,11 +1,10 @@
 import express from 'express';
 import multer from 'multer';
-import { createUser, getAllUsers, getUserById, updateUser, deleteUser, searchCustomers, updateUserCharges, undoUserCharges } from '../controllers/userController.js';
+import { createUser, getAllUsers, getUserById, updateUser, deleteUser, searchCustomers, updateUserCharges, undoUserCharges, getUserInvoicesById, addDefaultInvoicesForUser, addDefaultInvoicesForAllUsers, getUserRentedUnits } from '../controllers/userController.js';
 import { uploadUserDocuments } from '../middleware/uploadMiddleware.js';
 
 const router = express.Router();
 
-// Error handler for multer upload errors
 const handleUploadError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
@@ -35,6 +34,10 @@ const handleUploadError = (err, req, res, next) => {
 router.post('/', createUser);           // Create user
 router.get('/search', searchCustomers); // Search customers by name (for dropdown)
 router.get('/', getAllUsers);           // Get all users
+router.get('/:id/invoices', getUserInvoicesById);  // Get invoices by user ID (must be before /:id)
+router.get('/:id/rented-units', getUserRentedUnits);  // Get rented units by user ID (must be before /:id)
+router.post('/:id/invoices/default', addDefaultInvoicesForUser);  // Add default invoices for a user (admin only)
+router.post('/invoices/default-all', addDefaultInvoicesForAllUsers);  // Add default invoices for all users (admin only)
 router.put('/:id/charges', updateUserCharges);  // Update user charges only (must be before /:id)
 router.delete('/:id/charges', undoUserCharges);  // Undo (clear) user charges (must be before /:id)
 router.get('/:id', getUserById);        // Get user by ID

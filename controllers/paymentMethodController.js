@@ -1,6 +1,6 @@
-import getStripe from '../config/stripe.js';
-import User from '../models/User.js';
-import PaymentMethod from '../models/PaymentMethod.js';
+import getStripe from "../config/stripe.js";
+import User from "../models/User.js";
+import PaymentMethod from "../models/PaymentMethod.js";
 
 // Add a payment method for the authenticated user
 export const addPaymentMethod = async (req, res) => {
@@ -10,15 +10,21 @@ export const addPaymentMethod = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'User not authenticated'
+        message: "User not authenticated",
       });
     }
 
-    const { payment_method_id, card_number, expiration_date, cv, card_holder_name } = req.body;
+    const {
+      payment_method_id,
+      card_number,
+      expiration_date,
+      cv,
+      card_holder_name,
+    } = req.body;
 
     try {
       const stripe = getStripe();
-      
+
       // Get or create Stripe customer
       let stripeCustomerId = user.stripe_customer_id;
 
@@ -27,11 +33,11 @@ export const addPaymentMethod = async (req, res) => {
           email: user.email,
           name: user.name,
           metadata: {
-            user_id: user._id.toString()
-          }
+            user_id: user._id.toString(),
+          },
         });
         stripeCustomerId = customer.id;
-        
+
         // Save Stripe customer ID to user
         user.stripe_customer_id = stripeCustomerId;
         await user.save();
@@ -43,33 +49,37 @@ export const addPaymentMethod = async (req, res) => {
       // Option 1: Use PaymentMethod ID (recommended - from Stripe Elements)
       if (payment_method_id) {
         paymentMethodId = payment_method_id;
-        
+
         // Retrieve payment method details
-        paymentMethodDetails = await stripe.paymentMethods.retrieve(paymentMethodId);
-        
+        paymentMethodDetails = await stripe.paymentMethods.retrieve(
+          paymentMethodId
+        );
+
         // Attach payment method to customer if not already attached
         if (!paymentMethodDetails.customer) {
           await stripe.paymentMethods.attach(paymentMethodId, {
-            customer: stripeCustomerId
+            customer: stripeCustomerId,
           });
           // Retrieve again to get updated details
-          paymentMethodDetails = await stripe.paymentMethods.retrieve(paymentMethodId);
+          paymentMethodDetails = await stripe.paymentMethods.retrieve(
+            paymentMethodId
+          );
         }
-      } 
+      }
       // Option 2: Use card details (requires raw card data API enabled in Stripe)
       else if (card_number && expiration_date && cv && card_holder_name) {
         // Parse expiration date (format: MM/YY or MM/YYYY)
-        const expParts = expiration_date.split('/');
+        const expParts = expiration_date.split("/");
         if (expParts.length !== 2) {
           return res.status(400).json({
             success: false,
-            message: 'Invalid expiration date format. Use MM/YY or MM/YYYY'
+            message: "Invalid expiration date format. Use MM/YY or MM/YYYY",
           });
         }
 
         const expMonth = parseInt(expParts[0], 10);
         let expYear = parseInt(expParts[1], 10);
-        
+
         // Convert 2-digit year to 4-digit
         if (expYear < 100) {
           expYear = 2000 + expYear;
@@ -79,7 +89,7 @@ export const addPaymentMethod = async (req, res) => {
         if (expMonth < 1 || expMonth > 12) {
           return res.status(400).json({
             success: false,
-            message: 'Invalid expiration month'
+            message: "Invalid expiration month",
           });
         }
 
@@ -87,10 +97,13 @@ export const addPaymentMethod = async (req, res) => {
         const currentYear = currentDate.getFullYear();
         const currentMonth = currentDate.getMonth() + 1;
 
-        if (expYear < currentYear || (expYear === currentYear && expMonth < currentMonth)) {
+        if (
+          expYear < currentYear ||
+          (expYear === currentYear && expMonth < currentMonth)
+        ) {
           return res.status(400).json({
             success: false,
-            message: 'Card has expired'
+            message: "Card has expired",
           });
         }
 
@@ -98,39 +111,42 @@ export const addPaymentMethod = async (req, res) => {
         // NOTE: This requires "Raw card data APIs" to be enabled in your Stripe account
         // See: https://support.stripe.com/questions/enabling-access-to-raw-card-data-apis
         const paymentMethod = await stripe.paymentMethods.create({
-          type: 'card',
+          type: "card",
           card: {
-            number: card_number.replace(/\s/g, ''), // Remove spaces
+            number: card_number.replace(/\s/g, ""), // Remove spaces
             exp_month: expMonth,
             exp_year: expYear,
-            cvc: cv
+            cvc: cv,
           },
           billing_details: {
             name: card_holder_name,
-            email: user.email
-          }
+            email: user.email,
+          },
         });
 
         paymentMethodId = paymentMethod.id;
-        
+
         // Attach payment method to customer
         await stripe.paymentMethods.attach(paymentMethodId, {
-          customer: stripeCustomerId
+          customer: stripeCustomerId,
         });
 
         // Get payment method details
-        paymentMethodDetails = await stripe.paymentMethods.retrieve(paymentMethodId);
+        paymentMethodDetails = await stripe.paymentMethods.retrieve(
+          paymentMethodId
+        );
       } else {
         return res.status(400).json({
           success: false,
-          message: 'Either payment_method_id (from Stripe Elements) or card details (card_number, expiration_date, cv, card_holder_name) are required'
+          message:
+            "Either payment_method_id (from Stripe Elements) or card details (card_number, expiration_date, cv, card_holder_name) are required",
         });
       }
 
       // Check if this is the first payment method (make it default)
-      const existingMethods = await PaymentMethod.countDocuments({ 
-        user: user._id, 
-        is_active: true 
+      const existingMethods = await PaymentMethod.countDocuments({
+        user: user._id,
+        is_active: true,
       });
       const isDefault = existingMethods === 0;
 
@@ -139,72 +155,80 @@ export const addPaymentMethod = async (req, res) => {
         user: user._id,
         stripe_payment_method_id: paymentMethodId,
         stripe_customer_id: stripeCustomerId,
-        card_brand: paymentMethodDetails.card?.brand || '',
-        card_last4: paymentMethodDetails.card?.last4 || '',
+        card_brand: paymentMethodDetails.card?.brand || "",
+        card_last4: paymentMethodDetails.card?.last4 || "",
         card_exp_month: paymentMethodDetails.card?.exp_month,
         card_exp_year: paymentMethodDetails.card?.exp_year,
-        card_holder_name: card_holder_name || paymentMethodDetails.billing_details?.name || '',
+        card_holder_name:
+          card_holder_name || paymentMethodDetails.billing_details?.name || "",
         is_default: isDefault,
-        is_active: true
+        is_active: true,
       });
 
       res.status(201).json({
         success: true,
-        message: 'Payment method added successfully',
-        data: savedPaymentMethod
+        message: "Payment method added successfully",
+        data: savedPaymentMethod,
       });
     } catch (stripeError) {
       // Handle Stripe-specific errors
-      if (stripeError.type === 'StripeCardError') {
+      if (stripeError.type === "StripeCardError") {
         return res.status(400).json({
           success: false,
-          message: stripeError.message || 'Card validation failed',
-          error: 'CARD_ERROR'
+          message: stripeError.message || "Card validation failed",
+          error: "CARD_ERROR",
         });
       }
 
       // Handle raw card data API error
-      if (stripeError.message && stripeError.message.includes('Sending credit card numbers directly')) {
+      if (
+        stripeError.message &&
+        stripeError.message.includes("Sending credit card numbers directly")
+      ) {
         return res.status(400).json({
           success: false,
-          message: 'Raw card data APIs are not enabled in your Stripe account. Please use one of the following options:',
-          error: 'RAW_CARD_DATA_DISABLED',
+          message:
+            "Raw card data APIs are not enabled in your Stripe account. Please use one of the following options:",
+          error: "RAW_CARD_DATA_DISABLED",
           solutions: [
             {
-              method: 'Use Stripe Elements (Recommended)',
-              description: 'Create a PaymentMethod on the frontend using Stripe Elements, then send the payment_method_id to this endpoint',
+              method: "Use Stripe Elements (Recommended)",
+              description:
+                "Create a PaymentMethod on the frontend using Stripe Elements, then send the payment_method_id to this endpoint",
               example: {
                 payload: {
-                  payment_method_id: 'pm_1234567890abcdef'
-                }
+                  payment_method_id: "pm_1234567890abcdef",
+                },
               },
-              documentation: 'https://stripe.com/docs/stripe-js'
+              documentation: "https://stripe.com/docs/stripe-js",
             },
             {
-              method: 'Enable Raw Card Data APIs',
-              description: 'Enable this feature in your Stripe Dashboard (requires approval)',
+              method: "Enable Raw Card Data APIs",
+              description:
+                "Enable this feature in your Stripe Dashboard (requires approval)",
               steps: [
-                '1. Go to Stripe Dashboard → Settings → API',
+                "1. Go to Stripe Dashboard → Settings → API",
                 '2. Enable "Raw card data APIs"',
-                '3. Wait for Stripe approval'
+                "3. Wait for Stripe approval",
               ],
-              documentation: 'https://support.stripe.com/questions/enabling-access-to-raw-card-data-apis'
-            }
-          ]
+              documentation:
+                "https://support.stripe.com/questions/enabling-access-to-raw-card-data-apis",
+            },
+          ],
         });
       }
 
       return res.status(500).json({
         success: false,
-        message: 'Error processing payment method',
-        error: stripeError.message
+        message: "Error processing payment method",
+        error: stripeError.message,
       });
     }
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error adding payment method',
-      error: error.message
+      message: "Error adding payment method",
+      error: error.message,
     });
   }
 };
@@ -217,24 +241,24 @@ export const getPaymentMethods = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'User not authenticated'
+        message: "User not authenticated",
       });
     }
 
     const paymentMethods = await PaymentMethod.find({
       user: user._id,
-      is_active: true
+      is_active: true,
     }).sort({ is_default: -1, createdAt: -1 });
 
     res.status(200).json({
       success: true,
-      data: paymentMethods
+      data: paymentMethods,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching payment methods',
-      error: error.message
+      message: "Error fetching payment methods",
+      error: error.message,
     });
   }
 };
@@ -248,28 +272,25 @@ export const setDefaultPaymentMethod = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'User not authenticated'
+        message: "User not authenticated",
       });
     }
 
     const paymentMethod = await PaymentMethod.findOne({
       _id: paymentMethodId,
       user: user._id,
-      is_active: true
+      is_active: true,
     });
 
     if (!paymentMethod) {
       return res.status(404).json({
         success: false,
-        message: 'Payment method not found'
+        message: "Payment method not found",
       });
     }
 
     // Set all payment methods to not default
-    await PaymentMethod.updateMany(
-      { user: user._id },
-      { is_default: false }
-    );
+    await PaymentMethod.updateMany({ user: user._id }, { is_default: false });
 
     // Set this one as default
     paymentMethod.is_default = true;
@@ -277,14 +298,14 @@ export const setDefaultPaymentMethod = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Default payment method updated successfully',
-      data: paymentMethod
+      message: "Default payment method updated successfully",
+      data: paymentMethod,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error updating default payment method',
-      error: error.message
+      message: "Error updating default payment method",
+      error: error.message,
     });
   }
 };
@@ -298,30 +319,32 @@ export const deletePaymentMethod = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'User not authenticated'
+        message: "User not authenticated",
       });
     }
 
     const paymentMethod = await PaymentMethod.findOne({
       _id: paymentMethodId,
-      user: user._id
+      user: user._id,
     });
 
     if (!paymentMethod) {
       return res.status(404).json({
         success: false,
-        message: 'Payment method not found'
+        message: "Payment method not found",
       });
     }
 
     try {
       const stripe = getStripe();
-      
+
       // Detach payment method from Stripe customer
-      await stripe.paymentMethods.detach(paymentMethod.stripe_payment_method_id);
+      await stripe.paymentMethods.detach(
+        paymentMethod.stripe_payment_method_id
+      );
     } catch (stripeError) {
       // If payment method is already detached, continue
-      if (stripeError.code !== 'resource_missing') {
+      if (stripeError.code !== "resource_missing") {
         throw stripeError;
       }
     }
@@ -332,15 +355,150 @@ export const deletePaymentMethod = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Payment method deleted successfully',
-      data: {}
+      message: "Payment method deleted successfully",
+      data: {},
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error deleting payment method',
-      error: error.message
+      message: "Error deleting payment method",
+      error: error.message,
     });
   }
 };
 
+
+export const getPaymentDashboard = async (req, res) => {
+  try {
+    const { userId } = req.params; // Get userId from params
+    const currentUser = req.user;
+
+    if (!currentUser) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    // If userId is provided, use it; otherwise use current user
+    const targetUserId = userId || currentUser._id;
+    
+    // Authorization: Admin can see all, user can only see their own
+    const userRoles = currentUser?.roles || [];
+    const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+    const isOwner = targetUserId.toString() === currentUser._id.toString();
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to view this user\'s payment dashboard'
+      });
+    }
+
+    // Get target user
+    const targetUser = await User.findById(targetUserId).select('autopay_enabled subscriptions email name');
+    
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get current balance (sum of pending and overdue invoices)
+    const userEmail = targetUser.email.toLowerCase().trim();
+    const userName = targetUser.name.trim();
+    
+    const pendingInvoices = await Invoice.aggregate([
+      {
+        $match: {
+          $or: [
+            { customer_email: userEmail },
+            { customer_name: userName },
+            { customer_id: new mongoose.Types.ObjectId(targetUserId) }
+          ],
+          status: { $in: ['pending', 'overdue'] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' },
+          earliestDueDate: { $min: '$due_date' }
+        }
+      }
+    ]);
+
+    const currentBalance = pendingInvoices[0]?.total || 0;
+    const earliestDueDate = pendingInvoices[0]?.earliestDueDate || null;
+
+    // Get autopay status from user
+    const autopayEnabled = targetUser.autopay_enabled || false;
+    let nextPaymentDate = null;
+    
+    // Get next payment date from subscriptions or earliest due invoice
+    if (targetUser.subscriptions && targetUser.subscriptions.length > 0) {
+      const activeSubscriptions = targetUser.subscriptions.filter(sub => sub.status === 'active');
+      if (activeSubscriptions.length > 0) {
+        const nextDates = activeSubscriptions
+          .map(sub => sub.next_invoice_date)
+          .filter(date => date !== null);
+        if (nextDates.length > 0) {
+          nextPaymentDate = new Date(Math.min(...nextDates.map(d => new Date(d))));
+        }
+      }
+    }
+    
+    // If no subscription date, use earliest due date
+    if (!nextPaymentDate && earliestDueDate) {
+      nextPaymentDate = earliestDueDate;
+    }
+
+    // Get payment methods
+    const paymentMethods = await PaymentMethod.find({
+      user: targetUserId,
+      is_active: true
+    })
+      .select('card_brand card_last4 card_exp_month card_exp_year card_holder_name is_default')
+      .sort({ is_default: -1, createdAt: -1 });
+
+    // Format payment methods for display
+    const formattedPaymentMethods = paymentMethods.map(method => ({
+      id: method._id,
+      brand: method.card_brand,
+      last4: method.card_last4,
+      display: `${method.card_brand ? method.card_brand.charAt(0).toUpperCase() + method.card_brand.slice(1) : 'Card'} **** ${method.card_last4}`,
+      exp_month: method.card_exp_month,
+      exp_year: method.card_exp_year,
+      card_holder_name: method.card_holder_name,
+      is_default: method.is_default
+    }));
+
+    // Get default payment method
+    const defaultPaymentMethod = formattedPaymentMethods.find(pm => pm.is_default) || null;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        current_balance: {
+          amount: currentBalance || 0,
+          due_date: earliestDueDate || null,
+          formatted_amount: `$${(currentBalance || 0).toFixed(2)}`
+        },
+        autopay_status: {
+          enabled: autopayEnabled || false,
+          method: defaultPaymentMethod?.brand || null,
+          next_payment_date: nextPaymentDate || null,
+          display_method: defaultPaymentMethod?.display || null
+        },
+        payment_methods: formattedPaymentMethods || []
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching payment dashboard',
+      error: error.message
+    });
+  }
+};

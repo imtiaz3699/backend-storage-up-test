@@ -2,6 +2,43 @@ import Invoice from '../models/Invoice.js';
 import User from '../models/User.js';
 import Unit from '../models/Unit.js';
 import mongoose from 'mongoose';
+import getStripe from '../config/stripe.js';
+
+// Helper function to get payment link for an invoice
+const getPaymentLinkForInvoice = async (invoice) => {
+  // Only generate payment link for pending invoices with amount > 0
+  if (invoice.status !== 'pending' || invoice.amount <= 0) {
+    return null;
+  }
+
+  try {
+    const stripe = getStripe();
+
+    // If invoice already has a checkout session, check if it's still valid
+    if (invoice.stripe_checkout_session_id) {
+      try {
+        const session = await stripe.checkout.sessions.retrieve(
+          invoice.stripe_checkout_session_id
+        );
+        
+        // If session is still open, return its URL
+        if (session.status === 'open') {
+          return session.url;
+        }
+      } catch (error) {
+        // Session might not exist, continue to create a new one
+        console.log('Existing session not found, will create new one when needed');
+      }
+    }
+
+    // Session doesn't exist or is expired - will be created when user requests payment
+    // Return null to indicate payment link needs to be generated
+    return null;
+  } catch (error) {
+    console.error(`Error getting payment link for invoice ${invoice.invoice_id}:`, error);
+    return null;
+  }
+};
 
 const buildPagination = (page, limit, total) => {
   const totalPages = Math.ceil(total / limit) || 1;
@@ -91,12 +128,70 @@ export const createInvoice = async (req, res) => {
       }
     }
 
+    // If customer_email is not provided, get it from customer_id (User model)
+    if (!req.body.customer_email && req.body.customer_id) {
+      try {
+        const user = await User.findById(req.body.customer_id).select('email name');
+        if (user && user.email) {
+          req.body.customer_email = user.email.toLowerCase().trim();
+          // Also populate customer_name if not provided
+          if (!req.body.customer_name && user.name) {
+            req.body.customer_name = user.name;
+          }
+          console.log(`📧 Auto-populated customer_email from User (${req.body.customer_id}): ${req.body.customer_email}`);
+        } else {
+          console.warn(`⚠️  User not found or has no email for customer_id: ${req.body.customer_id}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error looking up User for customer_email:`, error.message);
+      }
+    }
+
     const invoice = await Invoice.create(req.body);
+
+    // Get payment link for the invoice
+    const invoiceData = invoice.toObject();
+    
+    // Automatically create Stripe Checkout Session for new invoices if pending and amount > 0
+    // We wait for it to complete so payment_link is available in response
+    if (invoice.status === 'pending' && invoice.amount > 0) {
+      try {
+        // Reload invoice with fresh data from DB (in case customer_email was auto-populated)
+        const freshInvoice = await Invoice.findById(invoice._id);
+        if (freshInvoice) {
+          console.log(`🔵 Attempting to create Stripe session for invoice ${freshInvoice.invoice_id}...`);
+          console.log(`   Invoice customer_email: ${freshInvoice.customer_email || 'NOT SET'}`);
+          console.log(`   Invoice customer_id: ${freshInvoice.customer_id || 'NOT SET'}`);
+          
+          const paymentLink = await createStripeCheckoutSessionForInvoice(freshInvoice);
+          
+          if (paymentLink) {
+            console.log(`✅ Payment link created: ${paymentLink.substring(0, 50)}...`);
+            invoiceData.payment_link = paymentLink;
+          } else {
+            console.log(`⚠️  Payment link is null for invoice ${freshInvoice.invoice_id} - check server logs above`);
+            invoiceData.payment_link = null;
+          }
+          
+          // Reload again to get the updated stripe_checkout_session_id
+          const updatedInvoice = await Invoice.findById(invoice._id);
+          if (updatedInvoice) {
+            invoiceData.stripe_checkout_session_id = updatedInvoice.stripe_checkout_session_id;
+            invoiceData.stripe_payment_status = updatedInvoice.stripe_payment_status;
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Error in createInvoice when creating Stripe session:`, error);
+        invoiceData.payment_link = null;
+      }
+    } else {
+      invoiceData.payment_link = null;
+    }
 
     res.status(201).json({
       success: true,
       message: 'Invoice created successfully',
-      data: invoice
+      data: invoiceData
     });
   } catch (error) {
     if (error.name === 'ValidationError') {
@@ -191,7 +286,7 @@ export const getInvoices = async (req, res) => {
       invoiceQuery
     ]);
 
-    // Optionally populate units data for each invoice
+    // Optionally populate units data and payment links for each invoice
     let invoicesData = invoices;
     if (populate) {
       invoicesData = await Promise.all(
@@ -203,6 +298,19 @@ export const getInvoices = async (req, res) => {
           } else {
             invoiceObj.units = [];
           }
+          // Add payment link if invoice is pending
+          const paymentLink = await getPaymentLinkForInvoice(invoice);
+          invoiceObj.payment_link = paymentLink;
+          return invoiceObj;
+        })
+      );
+    } else {
+      // Even if not populating, add payment links
+      invoicesData = await Promise.all(
+        invoices.map(async (invoice) => {
+          const invoiceObj = invoice.toObject();
+          const paymentLink = await getPaymentLinkForInvoice(invoice);
+          invoiceObj.payment_link = paymentLink;
           return invoiceObj;
         })
       );
@@ -305,7 +413,7 @@ export const getInvoicesByCustomerId = async (req, res) => {
       invoiceQuery
     ]);
 
-    // Populate units data for each invoice
+    // Populate units data and payment links for each invoice
     let invoicesData = invoices;
     if (populate) {
       invoicesData = await Promise.all(
@@ -317,6 +425,19 @@ export const getInvoicesByCustomerId = async (req, res) => {
           } else {
             invoiceObj.units = [];
           }
+          // Add payment link if invoice is pending
+          const paymentLink = await getPaymentLinkForInvoice(invoice);
+          invoiceObj.payment_link = paymentLink;
+          return invoiceObj;
+        })
+      );
+    } else {
+      // Even if not populating, add payment links
+      invoicesData = await Promise.all(
+        invoices.map(async (invoice) => {
+          const invoiceObj = invoice.toObject();
+          const paymentLink = await getPaymentLinkForInvoice(invoice);
+          invoiceObj.payment_link = paymentLink;
           return invoiceObj;
         })
       );
@@ -387,6 +508,10 @@ export const getInvoiceById = async (req, res) => {
       invoiceData.units = [];
     }
 
+    // Add payment link if invoice is pending
+    const paymentLink = await getPaymentLinkForInvoice(invoice);
+    invoiceData.payment_link = paymentLink;
+
     res.status(200).json({
       success: true,
       data: invoiceData
@@ -440,6 +565,10 @@ export const getInvoiceByInvoiceId = async (req, res) => {
     } else {
       invoiceData.units = [];
     }
+
+    // Add payment link if invoice is pending
+    const paymentLink = await getPaymentLinkForInvoice(invoice);
+    invoiceData.payment_link = paymentLink;
 
     res.status(200).json({
       success: true,
@@ -539,10 +668,15 @@ export const updateInvoice = async (req, res) => {
     Object.assign(invoice, req.body);
     await invoice.save();
 
+    // Get payment link if invoice is pending
+    const invoiceData = invoice.toObject();
+    const paymentLink = await getPaymentLinkForInvoice(invoice);
+    invoiceData.payment_link = paymentLink;
+
     res.status(200).json({
       success: true,
       message: 'Invoice updated successfully',
-      data: invoice.toObject()
+      data: invoiceData
     });
   } catch (error) {
     if (error.name === 'CastError') {
@@ -573,6 +707,100 @@ export const updateInvoice = async (req, res) => {
       message: 'Error updating invoice',
       error: error.message
     });
+  }
+};
+
+// Helper function to create Stripe Checkout Session for an invoice
+// Returns the checkout URL if successful, null otherwise
+const createStripeCheckoutSessionForInvoice = async (invoice) => {
+  try {
+    console.log(`🔵 Creating Stripe session for invoice ${invoice.invoice_id}...`);
+    
+    // Get user information
+    let customerEmail = invoice.customer_email;
+    let customerName = invoice.customer_name;
+    let stripeCustomerId = null;
+
+    // If no email in invoice, get it from customer_id (User model)
+    if (!customerEmail && invoice.customer_id) {
+      console.log(`   Looking up User model by customer_id: ${invoice.customer_id}`);
+      try {
+        const user = await User.findById(invoice.customer_id).select('email name stripe_customer_id');
+        if (user && user.email) {
+          customerEmail = user.email.toLowerCase().trim();
+          customerName = user.name || invoice.customer_name || 'Customer';
+          stripeCustomerId = user.stripe_customer_id || null;
+          console.log(`   ✅ Found User email: ${customerEmail}`);
+        } else {
+          console.error(`   ❌ User not found or has no email for customer_id: ${invoice.customer_id}`);
+        }
+      } catch (error) {
+        console.error(`   ❌ Error looking up User:`, error.message);
+      }
+    }
+
+    if (!customerEmail) {
+      console.error(`❌ Cannot create Stripe session for invoice ${invoice.invoice_id}: No customer email found (invoice.email=${invoice.customer_email}, customer_id=${invoice.customer_id})`);
+      return null;
+    }
+    
+    console.log(`   Using customer email: ${customerEmail}`);
+    console.log(`   Invoice amount: ${invoice.amount} (will convert to cents: ${Math.round(invoice.amount * 100)})`);
+
+    const stripe = getStripe();
+    let baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+    // Remove trailing slash to avoid double slashes
+    baseUrl = baseUrl.replace(/\/+$/, '');
+    
+    console.log(`   Creating Stripe session with baseUrl: ${baseUrl}`);
+
+    // Validate amount
+    const amountInCents = Math.round(invoice.amount * 100);
+    if (amountInCents < 50) { // Stripe minimum is $0.50
+      console.error(`❌ Amount too low: $${invoice.amount} (minimum is $0.50)`);
+      return null;
+    }
+
+    // Create Stripe Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: invoice.invoice_title || `Invoice ${invoice.invoice_id}`,
+              description: `Payment for ${invoice.invoice_title || `Invoice ${invoice.invoice_id}`}. Units: ${invoice.unit_number?.join(', ') || 'N/A'}`,
+            },
+            unit_amount: amountInCents, // Convert to cents
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${baseUrl}/invoices/${invoice._id}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/invoices/${invoice._id}/payment/cancel`,
+      // Stripe allows only one: either 'customer' (Stripe customer ID) or 'customer_email'
+      // Prefer Stripe customer ID if available, otherwise use email
+      ...(stripeCustomerId ? { customer: stripeCustomerId } : { customer_email: customerEmail }),
+      metadata: {
+        invoice_id: invoice._id.toString(),
+        invoice_number: invoice.invoice_id,
+        customer_id: invoice.customer_id?.toString() || '',
+      },
+    });
+
+    // Save checkout session ID to invoice
+    invoice.stripe_checkout_session_id = session.id;
+    invoice.stripe_payment_status = 'pending';
+    await invoice.save();
+
+    console.log(`✅ Stripe checkout session created for invoice ${invoice.invoice_id}: ${session.id}`);
+    return session.url; // Return the checkout URL
+  } catch (error) {
+    console.error(`❌ Error creating Stripe checkout session for invoice ${invoice.invoice_id}:`, error.message);
+    // Don't throw - invoice creation should succeed even if Stripe session creation fails
+    return null;
   }
 };
 

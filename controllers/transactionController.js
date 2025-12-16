@@ -1,5 +1,7 @@
 import Transaction from '../models/Transaction.js';
 import User from '../models/User.js';
+import Payment from '../models/Payment.js';
+import Invoice from '../models/Invoice.js';
 import mongoose from 'mongoose';
 
 const buildPagination = (page, limit, total) => {
@@ -514,6 +516,151 @@ export const deleteTransaction = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error deleting transaction',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get all transactions for a specific user
+ * Includes both move-out notice transactions and payment transactions
+ */
+export const getTransactionsByUserId = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUser = req.user;
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip = (page - 1) * limit;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Authorization: Admin can see all, user can only see their own
+    const userRoles = currentUser?.roles || [];
+    const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+    const isOwner = userId === currentUser._id.toString();
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to view transactions for this user'
+      });
+    }
+
+    // Build query to find all transactions for this user
+    // 1. Move-out notice transactions (customer_id in nested fields)
+    // 2. Payment transactions (via payment_id -> Payment.customer_id)
+    
+    const moveOutTransactions = await Transaction.find({
+      $or: [
+        { 'move_out_notice_give.customer_id': userId },
+        { 'actual_move_out_notice.customer_id': userId }
+      ]
+    });
+
+    // Get payment transactions by finding payments for this user, then finding transactions
+    const userPayments = await Payment.find({ customer_id: userId }).select('_id');
+    const paymentIds = userPayments.map(p => p._id);
+    
+    const paymentTransactions = await Transaction.find({
+      transaction_type: 'payment',
+      payment_id: { $in: paymentIds }
+    });
+
+    // Combine all transactions
+    const allTransactions = [...moveOutTransactions, ...paymentTransactions];
+
+    // Remove duplicates (in case a transaction appears in both queries)
+    const uniqueTransactions = Array.from(
+      new Map(allTransactions.map(t => [t._id.toString(), t])).values()
+    );
+
+    // Sort by createdAt (newest first)
+    uniqueTransactions.sort((a, b) => {
+      const dateA = new Date(a.createdAt || a.updatedAt || 0);
+      const dateB = new Date(b.createdAt || b.updatedAt || 0);
+      return dateB - dateA;
+    });
+
+    // Apply pagination
+    const total = uniqueTransactions.length;
+    const paginatedTransactions = uniqueTransactions.slice(skip, skip + limit);
+
+    // Populate related data
+    const populatedTransactions = await Promise.all(
+      paginatedTransactions.map(async (transaction) => {
+        // Populate move-out notice customer data
+        if (transaction.move_out_notice_give?.customer_id) {
+          await transaction.populate('move_out_notice_give.customer_id', 'name email phoneNumber');
+        }
+        if (transaction.actual_move_out_notice?.customer_id) {
+          await transaction.populate('actual_move_out_notice.customer_id', 'name email phoneNumber');
+        }
+
+        // Populate payment and invoice data for payment transactions
+        if (transaction.transaction_type === 'payment') {
+          if (transaction.payment_id) {
+            await transaction.populate({
+              path: 'payment_id',
+              select: 'invoice_number amount stripe_payment_status paid_at',
+              populate: {
+                path: 'invoice_id',
+                select: 'invoice_id invoice_title'
+              }
+            });
+          }
+          if (transaction.invoice_id) {
+            await transaction.populate('invoice_id', 'invoice_id invoice_title amount');
+          }
+        }
+
+        return transaction;
+      })
+    );
+
+    // Calculate summary statistics
+    const totalAmount = uniqueTransactions.reduce((sum, t) => {
+      if (t.transaction_type === 'payment' && t.amount) {
+        return sum + t.amount;
+      }
+      if (t.actual_move_out_notice?.final_amount_owed) {
+        return sum + t.actual_move_out_notice.final_amount_owed;
+      }
+      return sum;
+    }, 0);
+
+    const paidCount = uniqueTransactions.filter(t => t.status === 'paid').length;
+    const pendingCount = uniqueTransactions.filter(t => t.status === 'pending').length;
+
+    res.status(200).json({
+      success: true,
+      data: populatedTransactions,
+      summary: {
+        total_transactions: total,
+        paid_transactions: paidCount,
+        pending_transactions: pendingCount,
+        total_amount: totalAmount
+      },
+      pagination: buildPagination(page, limit, total)
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user transactions',
       error: error.message
     });
   }

@@ -60,6 +60,26 @@ const invoiceSchema = new mongoose.Schema(
       },
       default: "pending",
     },
+    // Stripe payment fields
+    stripe_checkout_session_id: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    stripe_payment_intent_id: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    stripe_payment_status: {
+      type: String,
+      enum: ["pending", "succeeded", "failed", "canceled"],
+      default: null,
+    },
+    paid_at: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

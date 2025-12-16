@@ -2,13 +2,107 @@ import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 
-// Schema for rented units with all required keys
+// Nested schemas matching Unit model structure
+const unitDetailsSchema = new mongoose.Schema({
+  unit_number: {
+    type: String,
+    trim: true
+  },
+  unit_type: {
+    type: String,
+    trim: true
+  },
+  unit_size: {
+    type: String,
+    trim: true
+  },
+  door_size: {
+    type: String,
+    trim: true
+  },
+  unit_status: {
+    type: String,
+    trim: true
+  },
+  walk_order: {
+    type: String,
+    trim: true
+  },
+  building_location: {
+    type: String,
+    trim: true
+  }
+}, { _id: false });
+
+const dimensionsSchema = new mongoose.Schema({
+  length: String,
+  width: String,
+  area_size: String,
+  height: String
+}, { _id: false });
+
+const otherInformationSchema = new mongoose.Schema({
+  creation_date: String,
+  end_date: String,
+  last_su_sync: String
+}, { _id: false });
+
+// Schema for rented units with all required keys from Unit model
 const rentedUnitSchema = new mongoose.Schema({
   unit_id: {
     type: mongoose.Schema.Types.ObjectId, // MongoDB ObjectId
     ref: "Unit",
     required: true
   },
+  // Unit model fields
+  unit_number: {
+    type: String,
+    trim: true
+  },
+  location: {
+    type: String,
+    trim: true
+  },
+  location_two: {
+    type: String,
+    trim: true
+  },
+  description: {
+    type: String,
+    trim: true
+  },
+  unit_details: {
+    type: unitDetailsSchema,
+    default: () => ({})
+  },
+  dimensions: {
+    type: dimensionsSchema,
+    default: () => ({})
+  },
+  unit_is: {
+    type: String,
+    enum: ['vacant', 'rented'],
+    default: 'rented'
+  },
+  customer_email: {
+    type: String,
+    trim: true,
+    lowercase: true
+  },
+  monthly_rate: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  other_information: {
+    type: otherInformationSchema,
+    default: () => ({})
+  },
+  maintenance_comments: {
+    type: String,
+    trim: true
+  },
+  // Rented unit specific fields
   billing_cycle: {
     type: String,
     trim: true,

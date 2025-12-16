@@ -9,6 +9,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import routes from "./routes/index.js";
 import { initializeDailyProcessing } from "./jobs/index.js";
+import { handleStripeWebhook } from "./controllers/paymentController.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,30 +28,41 @@ app.use(
   })
 );
 
-// Also use cors package as backup
+// CORS configuration - single unified settings
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:7000",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:7000",
+  "https://storag-up-admin-64aa23516b44.herokuapp.com",
+  "https://5a8385ef78c9.ngrok-free.app",
+  "http://192.168.100.141:7000",
+  "https://storag-up-d5c70a30c6c7.herokuapp.com"
+];
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
+      // Allow requests with no origin (like mobile apps, Postman, curl requests)
+      if (!origin) {
+        return callback(null, true);
+      }
 
-      // allow only specific domains in production
-      const allowedOrigins = [
-        "http://localhost:7000",
-        "http://127.0.0.1:3000",
-        "https://storag-up-admin-64aa23516b44.herokuapp.com",
-        "https://5a8385ef78c9.ngrok-free.app",
-        "http://192.168.100.141:7000"
-      ];
-      
+      // Check if origin is in allowed list
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error("Not allowed by CORS"));
+        // In development, allow localhost on any port
+        if (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')) {
+          callback(null, true);
+        } else {
+          // Reject other origins (don't throw error, just reject)
+          callback(null, false);
+        }
       }
     },
-    credentials: true, // allow cookies
-    methods: ["GET","POST","PUT","DELETE","OPTIONS","PATCH"],
+    credentials: true, // Allow cookies
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -59,12 +71,23 @@ app.use(
       "Origin",
     ],
     exposedHeaders: ["Content-Range", "X-Content-Range"],
+    optionsSuccessStatus: 200 // Support legacy browsers
   })
 );
 app.use(morgan("dev"));
+app.use(cookieParser());
+
+// Stripe Webhook Route (MUST be before JSON body parser)
+// Webhooks need raw body for signature verification
+app.post(
+  '/api/webhooks/stripe',
+  express.raw({ type: 'application/json' }),
+  handleStripeWebhook
+);
+
+// Body parsers for other routes (must come after webhook route)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 
 // Serve uploaded files statically
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -78,13 +101,17 @@ mongoose
   .connect(MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 10000, // Timeout after 10s instead of 30s
+    socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
   })
   .then(() => {
     console.log("✅ MongoDB connected successfully");
   })
   .catch((error) => {
-    console.error("❌ MongoDB connection error:", error);
-    process.exit(1);
+    console.log(error,'Server Error:=>')
+    
+    // Don't exit - let the app continue (some routes might work)
+    // process.exit(1);
   });
 
 // Routes
@@ -105,7 +132,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// API Routes
+// API Routes (most routes use JSON body parser)
 app.use("/api", routes);
 
 // Error handling middleware
@@ -168,3 +195,4 @@ app.listen(PORT, async () => {
     );
   }
 });
+

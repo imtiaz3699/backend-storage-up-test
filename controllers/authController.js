@@ -1,7 +1,9 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import Unit from "../models/Unit.js";
 import { sendEmail } from "../utils/emailService.js";
+import { createDefaultUnitsForUser } from "../utils/unitHelpers.js";
 
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
 
@@ -44,6 +46,11 @@ export const signup = async (req, res) => {
     });
 
     await user.save();
+
+    // Create default units for the new user (async, don't wait)
+    createDefaultUnitsForUser(user).catch(error => {
+      console.error(`Failed to create default units for user ${user._id}:`, error);
+    });
 
     // Generate token
     const token = generateToken(user._id);
@@ -175,7 +182,9 @@ export const logout = async (req, res) => {
 // Get current user - Protected route
 export const getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.userId);
+    const user = await User.findById(req.userId)
+      .select("-password")
+      .populate('rented_units.unit_id');
 
     if (!user) {
       return res.status(404).json({
@@ -184,9 +193,46 @@ export const getMe = async (req, res) => {
       });
     }
 
+    // Check if user has actual rented units from Unit collection
+    const userEmail = user.email.toLowerCase().trim();
+    const actualRentedUnitsCount = await Unit.countDocuments({
+      customer_email: userEmail,
+      unit_is: 'rented'
+    });
+
+    // Also check user's rented_units array for actual unit references (not dummy/sample)
+    const actualRentedUnitsInArray = user.rented_units?.filter(
+      ru => ru.unit_id && !ru.unit_id.sample
+    ).length || 0;
+
+    // Check if user has ANY actual rented units
+    let hasActualRentedUnits = actualRentedUnitsCount > 0 || actualRentedUnitsInArray > 0;
+
+    // If user has no rented units, create default units in the database
+    if (!hasActualRentedUnits && (!user.rented_units || user.rented_units.length === 0)) {
+      try {
+        await createDefaultUnitsForUser(user);
+        // Reload user to get the newly created units
+        await user.populate('rented_units.unit_id');
+        // Recheck after creating default units
+        hasActualRentedUnits = user.rented_units && user.rented_units.length > 0;
+      } catch (error) {
+        console.error(`Error creating default units for user ${user._id}:`, error);
+        // Continue without throwing - will return user without units
+      }
+    }
+
+    // Filter out any dummy/sample units if user has actual rented units
+    const userObject = user.toJSON();
+    if (hasActualRentedUnits && userObject.rented_units && userObject.rented_units.length > 0) {
+      userObject.rented_units = userObject.rented_units.filter(
+        ru => ru.unit_id && !ru.unit_id.sample
+      );
+    }
+
     res.status(200).json({
       success: true,
-      data: user,
+      data: userObject,
     });
   } catch (error) {
     res.status(500).json({

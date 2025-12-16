@@ -1,6 +1,12 @@
+import mongoose from "mongoose";
 import User from "../models/User.js";
 import Transaction from "../models/Transaction.js";
+import Invoice from "../models/Invoice.js";
+import Unit from "../models/Unit.js";
 import { getFileUrl } from "../middleware/uploadMiddleware.js";
+import { calculateInvoiceStats } from "../utils/invoiceHelpers.js";
+import { getDefaultDummyUnits, createDefaultUnitsForUser } from "../utils/unitHelpers.js";
+import getStripe from "../config/stripe.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -8,8 +14,106 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Helper function to create default invoices for a user (exported for use in other functions)
+export const createDefaultInvoicesForUser = async (user) => {
+  try {
+    // Check if user already has invoices
+    const existingInvoices = await Invoice.countDocuments({ customer_id: user._id });
+    if (existingInvoices > 0) {
+      return { created: 0, message: 'User already has invoices' };
+    }
+
+    const now = new Date();
+    const invoices = [];
+
+    // Create 5 default invoices with different statuses
+    const defaultInvoices = [
+      {
+        customer_id: user._id,
+        customer_name: user.name || 'Customer',
+        customer_email: user.email || '',
+        unit_number: ['UNIT-001'],
+        amount: 100.00,
+        issue_date: new Date(now.getFullYear(), now.getMonth(), 1), // First day of current month
+        due_date: new Date(now.getFullYear(), now.getMonth() + 1, 1), // First day of next month
+        status: 'pending',
+        invoice_title: 'Monthly Storage Fee'
+      },
+      {
+        customer_id: user._id,
+        customer_name: user.name || 'Customer',
+        customer_email: user.email || '',
+        unit_number: ['UNIT-002'],
+        amount: 150.00,
+        issue_date: new Date(now.getFullYear(), now.getMonth() - 1, 15), // 15th of last month
+        due_date: new Date(now.getFullYear(), now.getMonth(), 15), // 15th of current month
+        status: 'paid',
+        invoice_title: 'Previous Month Storage Fee'
+      },
+      {
+        customer_id: user._id,
+        customer_name: user.name || 'Customer',
+        customer_email: user.email || '',
+        unit_number: ['UNIT-003'],
+        amount: 75.00,
+        issue_date: new Date(now.getFullYear(), now.getMonth() - 2, 1), // 2 months ago
+        due_date: new Date(now.getFullYear(), now.getMonth() - 1, 1), // 1 month ago
+        status: 'overdue',
+        invoice_title: 'Past Due Storage Fee'
+      },
+      {
+        customer_id: user._id,
+        customer_name: user.name || 'Customer',
+        customer_email: user.email || '',
+        unit_number: ['UNIT-001'],
+        amount: 200.00,
+        issue_date: new Date(now.getFullYear(), now.getMonth() - 1, 1), // First day of last month
+        due_date: new Date(now.getFullYear(), now.getMonth(), 5), // 5th of current month
+        status: 'paid',
+        invoice_title: 'Storage Unit Rental'
+      },
+      {
+        customer_id: user._id,
+        customer_name: user.name || 'Customer',
+        customer_email: user.email || '',
+        unit_number: ['UNIT-001', 'UNIT-002'],
+        amount: 125.00,
+        issue_date: new Date(now.getFullYear(), now.getMonth(), 10), // 10th of current month
+        due_date: new Date(now.getFullYear(), now.getMonth() + 1, 10), // 10th of next month
+        status: 'pending',
+        invoice_title: 'Additional Storage Services'
+      }
+    ];
+
+    // Create invoices
+    for (const invoiceData of defaultInvoices) {
+      const invoice = new Invoice(invoiceData);
+      await invoice.save();
+      invoices.push(invoice);
+    }
+
+    return { created: invoices.length, invoices };
+  } catch (error) {
+    console.error(`Error creating default invoices for user ${user._id}:`, error);
+    throw error;
+  }
+};
+
 // Create a new user
 export const createUser = async (req, res) => {
+  const currentUser = req.user;
+  const userRoles = currentUser?.roles || [];
+  const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+
+  // Only admins can create users
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: "Administrator privileges are required to create users.",
+      code: "AUTH_FORBIDDEN"
+    });
+  }
+
   try {
     const { name, email, phoneNumber, password, roles } = req.body;
 
@@ -32,6 +136,16 @@ export const createUser = async (req, res) => {
     });
 
     await user.save();
+
+    // Create default invoices for the new user (async, don't wait)
+    createDefaultInvoicesForUser(user).catch(error => {
+      console.error(`Failed to create default invoices for user ${user._id}:`, error);
+    });
+
+    // Create default units for the new user (async, don't wait)
+    createDefaultUnitsForUser(user).catch(error => {
+      console.error(`Failed to create default units for user ${user._id}:`, error);
+    });
 
     res.status(201).json({
       success: true,
@@ -58,6 +172,19 @@ export const createUser = async (req, res) => {
 // Get all users with pagination
 export const getAllUsers = async (req, res) => {
   const { name } = req.query;
+  const currentUser = req.user;
+  const userRoles = currentUser?.roles || [];
+  const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+
+  // Only admins can view all users
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: "Administrator privileges are required to view all users.",
+      code: "AUTH_FORBIDDEN"
+    });
+  }
+
   try {
     // Pagination parameters
     const page = parseInt(req.query.page) || 1;
@@ -173,7 +300,22 @@ export const searchCustomers = async (req, res) => {
 // Get user by ID
 export const getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id)
+    const userId = req.params.id;
+    const currentUser = req.user;
+    const userRoles = currentUser?.roles || [];
+    const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+    const isViewingSelf = userId === currentUser._id.toString();
+
+    // Authorization check: Users can only view themselves, admins can view anyone
+    if (!isViewingSelf && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only view your own profile. Administrators can view any user.",
+        code: "AUTH_FORBIDDEN"
+      });
+    }
+
+    const user = await User.findById(userId)
       .select("-password")
       .populate('rented_units.unit_id');
 
@@ -182,6 +324,35 @@ export const getUserById = async (req, res) => {
         success: false,
         message: "User not found",
       });
+    }
+
+    // Check if user has actual rented units from Unit collection
+    const userEmail = user.email.toLowerCase().trim();
+    const actualRentedUnitsCount = await Unit.countDocuments({
+      customer_email: userEmail,
+      unit_is: 'rented'
+    });
+
+    // Also check user's rented_units array for actual unit references (not dummy/sample)
+    const actualRentedUnitsInArray = user.rented_units?.filter(
+      ru => ru.unit_id && !ru.unit_id.sample
+    ).length || 0;
+
+    // Check if user has ANY actual rented units
+    let hasActualRentedUnits = actualRentedUnitsCount > 0 || actualRentedUnitsInArray > 0;
+
+    // If user has no rented units, create default units in the database
+    if (!hasActualRentedUnits && (!user.rented_units || user.rented_units.length === 0)) {
+      try {
+        await createDefaultUnitsForUser(user);
+        // Reload user to get the newly created units
+        await user.populate('rented_units.unit_id');
+        // Recheck after creating default units
+        hasActualRentedUnits = user.rented_units && user.rented_units.length > 0;
+      } catch (error) {
+        console.error(`Error creating default units for user ${user._id}:`, error);
+        // Continue without throwing - will show dummy units as fallback
+      }
     }
 
     // Fetch transactions related to this user (both move_out and actual move_out)
@@ -254,6 +425,48 @@ export const getUserById = async (req, res) => {
       ];
     }
 
+    // Filter out any dummy/sample units if user has actual rented units
+    if (hasActualRentedUnits && userObject.rented_units && userObject.rented_units.length > 0) {
+      userObject.rented_units = userObject.rented_units.filter(
+        ru => ru.unit_id && !ru.unit_id.sample
+      );
+    }
+
+    // Only show dummy units if user has NO actual rented units
+    // Remove dummy units if user has at least one actual rented unit
+    if (!hasActualRentedUnits && (!userObject.rented_units || userObject.rented_units.length === 0)) {
+      const defaultUnits = getDefaultDummyUnits(user);
+      const now = new Date();
+      const oneMonthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+      // Convert dummy units to rented_units format (with unit_id reference)
+      userObject.rented_units = defaultUnits.map((unit, index) => ({
+        unit_id: {
+          _id: unit._id,
+          unit_number: unit.unit_number,
+          location: unit.location,
+          location_two: unit.location_two,
+          description: unit.description,
+          unit_details: unit.unit_details,
+          dimensions: unit.dimensions,
+          unit_is: unit.unit_is,
+          customer_email: unit.customer_email,
+          monthly_rate: unit.monthly_rate,
+          other_information: unit.other_information,
+          maintenance_comments: unit.maintenance_comments,
+          createdAt: unit.createdAt,
+          updatedAt: unit.updatedAt,
+          sample: true
+        },
+        billing_cycle: 'monthly',
+        deposit_amount: unit.monthly_rate * 2, // 2 months deposit
+        start_date: threeMonthsAgo,
+        end_date: index < 2 ? oneMonthFromNow : null, // First 2 units have end dates
+        sample: true
+      }));
+    }
+
     res.status(200).json({
       success: true,
       data: userObject,
@@ -276,6 +489,21 @@ export const getUserById = async (req, res) => {
 // Update user
 export const updateUser = async (req, res) => {
   try {
+    const userId = req.params.id;
+    const currentUser = req.user; // From tokenMiddleware
+    const userRoles = currentUser?.roles || [];
+    const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+    const isUpdatingSelf = userId === currentUser._id.toString();
+
+    // Authorization check: Users can only update themselves, admins can update anyone
+    if (!isUpdatingSelf && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only update your own profile. Administrators can update any user.",
+        code: "AUTH_FORBIDDEN"
+      });
+    }
+
     const {
       name,
       first_name,
@@ -309,7 +537,20 @@ export const updateUser = async (req, res) => {
     if (state_province !== undefined) updateData.state_province = state_province;
     if (zip_code !== undefined) updateData.zip_code = zip_code;
     if (password !== undefined) updateData.password = password;
-    if (roles !== undefined) updateData.roles = roles;
+    
+    // Only admins can update roles
+    if (roles !== undefined) {
+      if (isAdmin) {
+        updateData.roles = roles;
+      } else {
+        return res.status(403).json({
+          success: false,
+          message: "You do not have permission to update user roles.",
+          code: "AUTH_FORBIDDEN"
+        });
+      }
+    }
+    
     if (secondaryContactName !== undefined) updateData.secondaryContactName = secondaryContactName;
     if (secondaryPhoneNumber !== undefined) updateData.secondaryPhoneNumber = secondaryPhoneNumber;
     if (secondaryEmail !== undefined) updateData.secondaryEmail = secondaryEmail;
@@ -439,6 +680,200 @@ export const updateUser = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error updating user",
+      error: error.message,
+    });
+  }
+};
+
+// Get units rented by a user
+export const getUserRentedUnits = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const currentUser = req.user;
+    const userRoles = currentUser?.roles || [];
+    const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+    const isViewingSelf = userId === currentUser._id.toString();
+
+    // Pagination parameters
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip = (page - 1) * limit;
+
+    // Authorization check: Users can only view their own rented units, admins can view any user's
+    if (!isViewingSelf && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only view your own rented units. Administrators can view any user's rented units.",
+        code: "AUTH_FORBIDDEN"
+      });
+    }
+
+    const user = await User.findById(userId)
+      .select('rented_units email')
+      .populate('rented_units.unit_id');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Filter out any dummy/sample units
+    const allRentedUnits = (user.rented_units || []).filter(
+      ru => ru.unit_id && !ru.unit_id.sample
+    );
+
+    // If no rented units exist, check if we should create default units
+    if (allRentedUnits.length === 0) {
+      // Check if user has actual rented units from Unit collection
+      const userEmail = user.email?.toLowerCase().trim();
+      if (userEmail) {
+        const actualRentedUnitsCount = await Unit.countDocuments({
+          customer_email: userEmail,
+          unit_is: 'rented'
+        });
+
+        if (actualRentedUnitsCount === 0) {
+          try {
+            const fullUser = await User.findById(userId);
+            await createDefaultUnitsForUser(fullUser);
+            // Reload user to get the newly created units
+            const updatedUser = await User.findById(userId)
+              .select('rented_units email')
+              .populate('rented_units.unit_id');
+            const updatedAllRentedUnits = (updatedUser?.rented_units || []).filter(
+              ru => ru.unit_id && !ru.unit_id.sample
+            );
+            
+            // Apply pagination
+            const paginatedRentedUnits = updatedAllRentedUnits.slice(skip, skip + limit);
+            
+            // Calculate summary statistics from ALL units (not just paginated)
+            const totalUnits = updatedAllRentedUnits.length;
+            
+            // Calculate total monthly cost from all rented units
+            const monthlyCostTotal = updatedAllRentedUnits.reduce((sum, rentedUnit) => {
+              const monthlyRate = rentedUnit.monthly_rate || 
+                                 (rentedUnit.unit_id && rentedUnit.unit_id.monthly_rate) || 
+                                 0;
+              return sum + (typeof monthlyRate === 'number' ? monthlyRate : parseFloat(monthlyRate) || 0);
+            }, 0);
+            
+            const totalSpace = updatedAllRentedUnits.reduce((sum, rentedUnit) => {
+              const areaSize = rentedUnit.dimensions?.area_size || 
+                              (rentedUnit.unit_id && rentedUnit.unit_id.dimensions?.area_size);
+              if (areaSize) {
+                const match = String(areaSize).match(/(\d+\.?\d*)/);
+                if (match) {
+                  const value = parseFloat(match[1]);
+                  if (!isNaN(value)) {
+                    return sum + value;
+                  }
+                }
+              }
+              return sum;
+            }, 0);
+            
+            // Calculate pagination metadata
+            const totalPages = Math.ceil(totalUnits / limit);
+            const hasNextPage = page < totalPages;
+            const hasPrevPage = page > 1;
+            
+            return res.status(200).json({
+              success: true,
+              message: "User rented units retrieved successfully",
+              data: {
+                rented_units: paginatedRentedUnits,
+                total: totalUnits,
+                total_units: totalUnits,
+                monthly_cost_total: monthlyCostTotal,
+                total_space: parseFloat(totalSpace.toFixed(2)),
+                pagination: {
+                  currentPage: page,
+                  totalPages,
+                  totalItems: totalUnits,
+                  limit,
+                  hasNextPage,
+                  hasPrevPage,
+                  nextPage: hasNextPage ? page + 1 : null,
+                  prevPage: hasPrevPage ? page - 1 : null
+                }
+              }
+            });
+          } catch (error) {
+            console.error(`Error creating default units for user ${userId}:`, error);
+            // Continue to return empty array if creation fails
+          }
+        }
+      }
+    }
+
+    // Apply pagination
+    const paginatedRentedUnits = allRentedUnits.slice(skip, skip + limit);
+    
+    // Calculate summary statistics from ALL units (not just paginated)
+    const totalUnits = allRentedUnits.length;
+    
+    // Calculate total monthly cost from all rented units
+    const monthlyCostTotal = allRentedUnits.reduce((sum, rentedUnit) => {
+      const monthlyRate = rentedUnit.monthly_rate || 
+                         (rentedUnit.unit_id && rentedUnit.unit_id.monthly_rate) || 
+                         0;
+      return sum + (typeof monthlyRate === 'number' ? monthlyRate : parseFloat(monthlyRate) || 0);
+    }, 0);
+    
+    const totalSpace = allRentedUnits.reduce((sum, rentedUnit) => {
+      const areaSize = rentedUnit.dimensions?.area_size || 
+                      (rentedUnit.unit_id && rentedUnit.unit_id.dimensions?.area_size);
+      if (areaSize) {
+        const match = String(areaSize).match(/(\d+\.?\d*)/);
+        if (match) {
+          const value = parseFloat(match[1]);
+          if (!isNaN(value)) {
+            return sum + value;
+          }
+        }
+      }
+      return sum;
+    }, 0);
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalUnits / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    res.status(200).json({
+      success: true,
+      message: "User rented units retrieved successfully",
+      data: {
+        rented_units: paginatedRentedUnits,
+        total: totalUnits,
+        total_units: totalUnits,
+        monthly_cost_total: monthlyCostTotal,
+        total_space: parseFloat(totalSpace.toFixed(2)),
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems: totalUnits,
+          limit,
+          hasNextPage,
+          hasPrevPage,
+          nextPage: hasNextPage ? page + 1 : null,
+          prevPage: hasPrevPage ? page - 1 : null
+        }
+      }
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error fetching user rented units",
       error: error.message,
     });
   }
@@ -919,8 +1354,22 @@ export const undoUserCharges = async (req, res) => {
 
 // Delete user
 export const deleteUser = async (req, res) => {
+  const userId = req.params.id;
+  const currentUser = req.user;
+  const userRoles = currentUser?.roles || [];
+  const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+
+  // Only admins can delete users
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: "Administrator privileges are required to delete users.",
+      code: "AUTH_FORBIDDEN"
+    });
+  }
+
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
+    const user = await User.findByIdAndDelete(userId);
 
     if (!user) {
       return res.status(404).json({
@@ -944,6 +1393,264 @@ export const deleteUser = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error deleting user",
+      error: error.message,
+    });
+  }
+};
+
+// Get invoices by user ID
+export const getUserInvoicesById = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const currentUser = req.user;
+    const userRoles = currentUser?.roles || [];
+    const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+    const isViewingSelf = userId === currentUser._id.toString();
+
+    // Authorization check: Users can only view their own invoices, admins can view anyone's
+    if (!isViewingSelf && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only view your own invoices. Administrators can view any user's invoices.",
+        code: "AUTH_FORBIDDEN"
+      });
+    }
+
+    // Validate user ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Pagination parameters
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip = (page - 1) * limit;
+
+    // First check if user has ANY invoices (without status filter)
+    const totalInvoicesCount = await Invoice.countDocuments({ customer_id: userId });
+
+    // If no invoices exist at all, create 5 default invoices for the user
+    if (totalInvoicesCount === 0) {
+      try {
+        await createDefaultInvoicesForUser(user);
+      } catch (error) {
+        console.error(`Error creating default invoices for user ${userId}:`, error);
+        // Continue even if default invoice creation fails
+      }
+    }
+
+    // Build query with optional status filter
+    const query = { customer_id: userId };
+    if (req.query.status) {
+      query.status = req.query.status.toLowerCase();
+    }
+
+    // Get total count and invoices (after potentially creating defaults)
+    const [totalCount, allInvoices] = await Promise.all([
+      Invoice.countDocuments(query),
+      Invoice.find(query).sort({ createdAt: -1 })
+    ]);
+
+    // Apply pagination to the invoices
+    const paginatedInvoices = allInvoices.slice(skip, skip + limit);
+    const finalTotalCount = totalCount;
+
+    // Calculate invoice statistics using helper function
+    const invoiceStats = await calculateInvoiceStats(userId);
+
+    // Add payment links to paginated invoices
+    const invoicesWithPaymentLinks = await Promise.all(
+      paginatedInvoices.map(async (invoice) => {
+        const invoiceObj = invoice.toObject();
+        // Get payment link if invoice is pending
+        if (invoice.status === 'pending' && invoice.amount > 0) {
+          try {
+            const stripe = getStripe();
+            if (invoice.stripe_checkout_session_id) {
+              try {
+                const session = await stripe.checkout.sessions.retrieve(
+                  invoice.stripe_checkout_session_id
+                );
+                if (session.status === 'open') {
+                  invoiceObj.payment_link = session.url;
+                } else {
+                  invoiceObj.payment_link = null;
+                }
+              } catch (error) {
+                invoiceObj.payment_link = null;
+              }
+            } else {
+              invoiceObj.payment_link = null;
+            }
+          } catch (error) {
+            invoiceObj.payment_link = null;
+          }
+        } else {
+          invoiceObj.payment_link = null;
+        }
+        return invoiceObj;
+      })
+    );
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(finalTotalCount / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    res.status(200).json({
+      success: true,
+      count: invoicesWithPaymentLinks.length,
+      total_invoices: invoiceStats.total_invoices,
+      paid_invoices: invoiceStats.paid_invoices,
+      unpaid_invoices: invoiceStats.unpaid_invoices,
+      overdue_invoices: invoiceStats.overdue_invoices,
+      monthly_invoice_summary: invoiceStats.monthly_invoice_summary,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems: finalTotalCount,
+        limit,
+        hasNextPage,
+        hasPrevPage,
+        nextPage: hasNextPage ? page + 1 : null,
+        prevPage: hasPrevPage ? page - 1 : null,
+      },
+      data: invoicesWithPaymentLinks,
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error fetching user invoices",
+      error: error.message,
+    });
+  }
+};
+
+// Add default invoices for a specific user
+export const addDefaultInvoicesForUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const currentUser = req.user;
+    const userRoles = currentUser?.roles || [];
+    const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+
+    // Only admins can add default invoices
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Administrator privileges are required to add default invoices.",
+        code: "AUTH_FORBIDDEN"
+      });
+    }
+
+    // Validate user ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const result = await createDefaultInvoicesForUser(user);
+
+    res.status(200).json({
+      success: true,
+      message: result.created > 0 
+        ? `Successfully created ${result.created} default invoices for user`
+        : result.message,
+      data: {
+        invoicesCreated: result.created,
+        invoices: result.invoices || []
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error creating default invoices",
+      error: error.message,
+    });
+  }
+};
+
+// Add default invoices for all users (admin only)
+export const addDefaultInvoicesForAllUsers = async (req, res) => {
+  try {
+    const currentUser = req.user;
+    const userRoles = currentUser?.roles || [];
+    const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+
+    // Only admins can add default invoices for all users
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Administrator privileges are required.",
+        code: "AUTH_FORBIDDEN"
+      });
+    }
+
+    // Get all users
+    const users = await User.find({});
+    
+    let totalCreated = 0;
+    let totalSkipped = 0;
+    const results = [];
+
+    for (const user of users) {
+      try {
+        const result = await createDefaultInvoicesForUser(user);
+        if (result.created > 0) {
+          totalCreated += result.created;
+          results.push({ userId: user._id, email: user.email, invoicesCreated: result.created });
+        } else {
+          totalSkipped++;
+        }
+      } catch (error) {
+        console.error(`Error processing user ${user._id}:`, error);
+        results.push({ userId: user._id, email: user.email, error: error.message });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Processed ${users.length} users. Created ${totalCreated} invoices, skipped ${totalSkipped} users (already had invoices).`,
+      data: {
+        totalUsers: users.length,
+        totalInvoicesCreated: totalCreated,
+        usersSkipped: totalSkipped,
+        results
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error creating default invoices for all users",
       error: error.message,
     });
   }
