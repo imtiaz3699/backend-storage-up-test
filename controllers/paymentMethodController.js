@@ -1,6 +1,8 @@
 import getStripe from "../config/stripe.js";
 import User from "../models/User.js";
 import PaymentMethod from "../models/PaymentMethod.js";
+import Invoice from "../models/Invoice.js";
+import mongoose from "mongoose";
 
 // Add a payment method for the authenticated user
 export const addPaymentMethod = async (req, res) => {

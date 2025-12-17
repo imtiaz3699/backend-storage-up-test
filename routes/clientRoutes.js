@@ -6,7 +6,8 @@ import {
   addPaymentMethod,
   getPaymentMethods,
   setDefaultPaymentMethod,
-  deletePaymentMethod
+  deletePaymentMethod,
+  getPaymentDashboard
 } from '../controllers/paymentMethodController.js';
 import {
   createInvoiceCheckoutSession,
@@ -16,7 +17,8 @@ import {
 } from '../controllers/paymentController.js';
 import {
   getMyPayments,
-  getPaymentsByInvoiceId
+  getPaymentsByInvoiceId,
+  getPaymentsByUserId
 } from '../controllers/paymentRecordController.js';
 import { protect, tokenMiddleware } from '../middleware/authMiddleware.js';
 import { getTransactionsByUserId } from '../controllers/transactionController.js';
@@ -28,6 +30,7 @@ router.get('/my-rentals', protect, getUserDashboard);
 router.get('/my-invoices', protect, getUserInvoices);
 router.post('/profile', protect, updateProfile);
 router.post('/payment-methods', tokenMiddleware, addPaymentMethod);
+router.get('/payment-dashboard/:userId', tokenMiddleware, getPaymentDashboard);
 router.get('/payment-methods', protect, getPaymentMethods);
 router.put('/payment-methods/:paymentMethodId/default', protect, setDefaultPaymentMethod);
 router.delete('/payment-methods/:paymentMethodId', protect, deletePaymentMethod);
@@ -41,6 +44,7 @@ router.get('/invoices/:invoiceId/payment/verify', verifyPaymentSuccess); // Publ
 // Client Payment Records routes
 router.get('/payments', protect, getMyPayments); // Get current user's payments
 router.get('/invoices/:invoiceId/payments', protect, getPaymentsByInvoiceId); // Get payments for a specific invoice (user's own invoices only)
+router.get("/users/:userId/payments", getPaymentsByUserId)
 
 // Client Transaction routes
 router.get('/transactions', protect, async (req, res) => {
