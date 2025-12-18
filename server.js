@@ -10,13 +10,65 @@ import { fileURLToPath } from "url";
 import routes from "./routes/index.js";
 import { initializeDailyProcessing } from "./jobs/index.js";
 import { handleStripeWebhook } from "./controllers/paymentController.js";
+import { Server } from "socket.io";
+import http from 'http';
+
+
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config();
-
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:7000",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:7000",
+  "https://storag-up-admin-64aa23516b44.herokuapp.com",
+  "https://5a8385ef78c9.ngrok-free.app",
+  "http://192.168.100.141:7000",
+  "https://storag-up-d5c70a30c6c7.herokuapp.com"
+];
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server,{
+  cors:{
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
+  }
+})
+
+io.on('connection', (socket)=> {
+  console.log("Client connection:",socket.io);
+  socket.on('join-user-room', (userId)=> {
+    socket.join(`user-${userId}`);
+    console.log(`user ${userId} joined their room.`)
+  });
+  socket.on('disconnect', ()=> {const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:7000",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:7000",
+  "https://storag-up-admin-64aa23516b44.herokuapp.com",
+  "https://5a8385ef78c9.ngrok-free.app",
+  "http://192.168.100.141:7000",
+  "https://storag-up-d5c70a30c6c7.herokuapp.com"
+];
+    console.log(`Client disconnected:`, socket.id);
+  })
+})
+app.set('io', io);
+
+
 
 
 // Configure Helmet to work with CORS (after CORS middleware)
@@ -29,16 +81,7 @@ app.use(
 );
 
 // CORS configuration - single unified settings
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:7000",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:7000",
-  "https://storag-up-admin-64aa23516b44.herokuapp.com",
-  "https://5a8385ef78c9.ngrok-free.app",
-  "http://192.168.100.141:7000",
-  "https://storag-up-d5c70a30c6c7.herokuapp.com"
-];
+
 
 app.use(
   cors({

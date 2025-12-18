@@ -3,8 +3,7 @@ import User from "../models/User.js";
 import PaymentMethod from "../models/PaymentMethod.js";
 import Invoice from "../models/Invoice.js";
 import mongoose from "mongoose";
-
-// Add a payment method for the authenticated user
+import { configDotenv } from "dotenv";
 export const addPaymentMethod = async (req, res) => {
   try {
     const user = req.user;
@@ -235,7 +234,6 @@ export const addPaymentMethod = async (req, res) => {
   }
 };
 
-// Get all payment methods for the authenticated user
 export const getPaymentMethods = async (req, res) => {
   try {
     const user = req.user;
@@ -265,7 +263,6 @@ export const getPaymentMethods = async (req, res) => {
   }
 };
 
-// Set a payment method as default
 export const setDefaultPaymentMethod = async (req, res) => {
   try {
     const user = req.user;
@@ -312,7 +309,6 @@ export const setDefaultPaymentMethod = async (req, res) => {
   }
 };
 
-// Delete a payment method
 export const deletePaymentMethod = async (req, res) => {
   try {
     const user = req.user;
@@ -368,7 +364,6 @@ export const deletePaymentMethod = async (req, res) => {
     });
   }
 };
-
 
 export const getPaymentDashboard = async (req, res) => {
   try {
