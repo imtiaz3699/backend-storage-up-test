@@ -34,12 +34,13 @@ app.use(
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:7000",
+  "http://localhost:5173", // Vite default port
   "http://127.0.0.1:3000",
   "http://127.0.0.1:7000",
+  "http://127.0.0.1:5173",
   "https://storag-up-admin-64aa23516b44.herokuapp.com",
   "https://5a8385ef78c9.ngrok-free.app",
   "http://192.168.100.141:7000",
-  "http://localhost:5173/"
 ];
 
 app.use(
@@ -54,15 +55,19 @@ app.use(
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        // In development, allow localhost on any port
-        if (
-          process.env.NODE_ENV !== "production" &&
-          origin.startsWith("http://localhost:")
-        ) {
+        // Allow localhost on any port (for development and testing)
+        if (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
           callback(null, true);
         } else {
-          // Reject other origins (don't throw error, just reject)
-          callback(null, false);
+          // Check if origin matches production frontend URL from env
+          const frontendUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL;
+          if (frontendUrl && origin === frontendUrl.replace(/\/+$/, '')) {
+            callback(null, true);
+          } else {
+            // Reject other origins (don't throw error, just reject)
+            console.warn(`⚠️  CORS blocked origin: ${origin}`);
+            callback(null, false);
+          }
         }
       }
     },
