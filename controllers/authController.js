@@ -52,6 +52,27 @@ export const signup = async (req, res) => {
       console.error(`Failed to create default units for user ${user._id}:`, error);
     });
 
+    // Send notification to admins about new customer signup
+    try {
+      const { emitNotificationToAdmin } = await import('../utils/socketService.js');
+      await emitNotificationToAdmin({
+        type: 'customer_signup',
+        title: 'New Customer Signup',
+        message: `${name} (${email}) just signed up`,
+        priority: 'medium',
+        data: {
+          user_id: user._id.toString(),
+          name: name,
+          email: email,
+          phone_number: phoneNumber,
+          signup_date: new Date().toISOString()
+        }
+      });
+      console.log(`📢 Admin notification sent for new customer signup: ${email}`);
+    } catch (notificationError) {
+      console.error(`❌ Failed to send admin notification for new signup:`, notificationError.message);
+    }
+
     // Generate token
     const token = generateToken(user._id);
 

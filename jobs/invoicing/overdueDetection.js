@@ -1,5 +1,7 @@
 // Overdue Invoice Detection Job
 import Invoice from '../../models/Invoice.js';
+import Notification from '../../models/Notification.js';
+import { emitNotificationToUser } from '../../utils/socketService.js';
 
 /**
  * Daily job to detect and update overdue invoices
@@ -37,11 +39,20 @@ export const overdueInvoiceDetection = async (processingDate = null) => {
 
     let updatedCount = 0;
     let totalOverdueAmount = 0;
+    let notificationsSent = 0;
     const overdueDetails = [];
 
     // Process each overdue invoice
     for (const invoice of overdueInvoices) {
       try {
+        // Skip if no customer_id
+        if (!invoice.customer_id) {
+          console.log(`   ⚠️  No customer_id for invoice ${invoice.invoice_id}`);
+          continue;
+        }
+
+        const customerId = invoice.customer_id._id || invoice.customer_id;
+        
         // Calculate days overdue
         const daysOverdue = Math.floor((today - new Date(invoice.due_date)) / (1000 * 60 * 60 * 24));
         
@@ -51,6 +62,42 @@ export const overdueInvoiceDetection = async (processingDate = null) => {
 
         updatedCount++;
         totalOverdueAmount += invoice.amount;
+
+        // Send socket notification to user
+        try {
+          // Create notification in database
+          const notification = await Notification.create({
+            user_id: customerId,
+            type: 'invoice_overdue',
+            title: 'Invoice Overdue',
+            message: `Your invoice ${invoice.invoice_id} is now overdue. Amount: $${invoice.amount.toFixed(2)}${daysOverdue > 0 ? ` (${daysOverdue} day${daysOverdue > 1 ? 's' : ''} overdue)` : ''}`,
+            data: {
+              invoice_id: invoice._id.toString(),
+              invoice_number: invoice.invoice_id,
+              amount: invoice.amount,
+              due_date: invoice.due_date,
+              status: 'overdue',
+              days_overdue: daysOverdue
+            }
+          });
+
+          // Emit socket notification
+          emitNotificationToUser(customerId.toString(), {
+            id: notification._id.toString(),
+            type: notification.type,
+            title: notification.title,
+            message: notification.message,
+            data: notification.data,
+            read: notification.read,
+            createdAt: notification.createdAt
+          });
+
+          notificationsSent++;
+          console.log(`   🔔 Notification sent to user ${customerId} for overdue invoice ${invoice.invoice_id}`);
+
+        } catch (notificationError) {
+          console.error(`   ❌ Failed to send notification for invoice ${invoice.invoice_id}:`, notificationError.message);
+        }
 
         // Store details for reporting
         overdueDetails.push({
@@ -73,6 +120,7 @@ export const overdueInvoiceDetection = async (processingDate = null) => {
     const result = {
       processed: overdueInvoices.length,
       updated: updatedCount,
+      notificationsSent: notificationsSent,
       totalAmount: parseFloat(totalOverdueAmount.toFixed(2)),
       details: overdueDetails
     };
@@ -80,7 +128,30 @@ export const overdueInvoiceDetection = async (processingDate = null) => {
     console.log(`✅ Overdue detection completed:`);
     console.log(`   📊 Processed: ${result.processed} invoices`);
     console.log(`   ✏️  Updated: ${result.updated} invoices`);
+    console.log(`   🔔 Notifications sent: ${result.notificationsSent}`);
     console.log(`   💰 Total overdue amount: $${result.totalAmount}`);
+
+    // Send admin notification for overdue invoices batch
+    if (result.updated > 0) {
+      try {
+        const { emitNotificationToAdmin } = await import('../../utils/socketService.js');
+        await emitNotificationToAdmin({
+          type: 'invoice_overdue',
+          title: 'Invoices Marked Overdue',
+          message: `${result.updated} invoice${result.updated > 1 ? 's' : ''} marked as overdue. Total amount: $${result.totalAmount.toFixed(2)}`,
+          priority: 'high',
+          data: {
+            count: result.updated,
+            total_amount: result.totalAmount,
+            processing_date: processDate.toISOString().split('T')[0],
+            invoices: overdueDetails.slice(0, 10) // Limit to first 10 for notification payload
+          }
+        });
+        console.log(`📢 Admin notification sent for ${result.updated} overdue invoices`);
+      } catch (adminNotificationError) {
+        console.error(`❌ Failed to send admin notification for overdue invoices:`, adminNotificationError.message);
+      }
+    }
 
     // Optional: Send admin alert for high-value overdue invoices
     const highValueThreshold = parseFloat(process.env.HIGH_VALUE_OVERDUE_THRESHOLD) || 500;

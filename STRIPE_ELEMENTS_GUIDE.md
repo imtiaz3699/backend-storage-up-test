@@ -531,5 +531,3 @@ If you encounter issues:
 4. Check that authentication token is being sent correctly
 
 
-
-

@@ -392,5 +392,3 @@ const payInvoice = async (invoiceId) => {
 That's it! 🎉
 
 
-
-

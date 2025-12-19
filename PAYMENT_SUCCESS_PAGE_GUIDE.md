@@ -249,5 +249,3 @@ if (error) {
 That's it! Your success page should verify the payment and show confirmation to the user. 🎉
 
 
-
-

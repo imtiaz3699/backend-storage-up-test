@@ -645,6 +645,9 @@ export const updateUser = async (req, res) => {
       }
     }
 
+    // Get user before update to track changes (for admin notification)
+    const userBeforeUpdate = await User.findById(req.params.id).select("-password");
+    
     const user = await User.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: true,
@@ -655,6 +658,51 @@ export const updateUser = async (req, res) => {
         success: false,
         message: "User not found",
       });
+    }
+
+    // Send notification to admins about important user updates (only if admin made the update)
+    if (isAdmin && !isUpdatingSelf && userBeforeUpdate) {
+      try {
+        // Track important field changes
+        const importantFields = ['email', 'phoneNumber', 'roles', 'name'];
+        const changedFields = importantFields.filter(field => {
+          if (field === 'roles') {
+            // Compare arrays
+            const oldRoles = JSON.stringify((userBeforeUpdate.roles || []).sort());
+            const newRoles = JSON.stringify((user.roles || []).sort());
+            return oldRoles !== newRoles;
+          }
+          return userBeforeUpdate[field] !== user[field];
+        });
+
+        if (changedFields.length > 0) {
+          const { emitNotificationToAdmin } = await import('../utils/socketService.js');
+          await emitNotificationToAdmin({
+            type: 'user_updated',
+            title: 'User Account Updated',
+            message: `User ${user.name || user.email} account updated. Changed: ${changedFields.join(', ')}`,
+            priority: 'medium',
+            data: {
+              user_id: user._id.toString(),
+              user_name: user.name,
+              user_email: user.email,
+              changed_fields: changedFields,
+              updated_by: currentUser.name || currentUser.email,
+              updated_at: new Date().toISOString(),
+              changes: changedFields.reduce((acc, field) => {
+                acc[field] = {
+                  old: userBeforeUpdate[field],
+                  new: user[field]
+                };
+                return acc;
+              }, {})
+            }
+          });
+          console.log(`📢 Admin notification sent for user update: ${user.email}`);
+        }
+      } catch (adminNotificationError) {
+        console.error(`❌ Failed to send admin notification for user update:`, adminNotificationError.message);
+      }
     }
 
     res.status(200).json({

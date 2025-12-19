@@ -1,6 +1,8 @@
 // Payment Reminder Email Job
 import Invoice from '../../models/Invoice.js';
+import Notification from '../../models/Notification.js';
 import { sendEmail } from '../../utils/emailService.js';
+import { emitNotificationToUser } from '../../utils/socketService.js';
 
 /**
  * Daily job to send payment reminder emails
@@ -67,6 +69,7 @@ export const paymentReminderEmails = async (processingDate = null) => {
 
     let totalSent = 0;
     let totalFailed = 0;
+    let totalNotificationsSent = 0;
     const reminderDetails = [];
 
     for (const schedule of reminderSchedules) {
@@ -86,47 +89,124 @@ export const paymentReminderEmails = async (processingDate = null) => {
 
         let sentCount = 0;
         let failedCount = 0;
+        let notificationCount = 0;
 
         for (const invoice of invoices) {
           try {
-            // Skip if no customer email
-            if (!invoice.customer_email) {
-              console.log(`   ⚠️  No email for invoice ${invoice.invoice_id} (${invoice.customer_name})`);
+            // Skip if no customer_id
+            if (!invoice.customer_id) {
+              console.log(`   ⚠️  No customer_id for invoice ${invoice.invoice_id}`);
               continue;
             }
 
-            // Calculate days until/past due
-            const daysDiff = Math.ceil((new Date(invoice.due_date) - today) / (1000 * 60 * 60 * 24));
-            
-            // Generate email content based on reminder type
-            const emailContent = generateReminderEmail(invoice, schedule.type, daysDiff);
-            
-            // Send email
-            await sendEmail({
-              to: invoice.customer_email,
-              subject: emailContent.subject,
-              text: emailContent.text,
-              html: emailContent.html
-            });
+            const customerId = invoice.customer_id._id || invoice.customer_id;
+            const customerEmail = invoice.customer_email || invoice.customer_id?.email;
 
-            sentCount++;
-            console.log(`     ✅ Sent to ${invoice.customer_email} (${invoice.invoice_id})`);
+            // Send EMAIL notification (existing functionality)
+            if (customerEmail) {
+              try {
+                // Calculate days until/past due
+                const daysDiff = Math.ceil((new Date(invoice.due_date) - today) / (1000 * 60 * 60 * 24));
+                
+                // Generate email content based on reminder type
+                const emailContent = generateReminderEmail(invoice, schedule.type, daysDiff);
+                
+                // Send email
+                await sendEmail({
+                  to: customerEmail,
+                  subject: emailContent.subject,
+                  text: emailContent.text,
+                  html: emailContent.html
+                });
 
-          } catch (emailError) {
-            failedCount++;
-            console.error(`     ❌ Failed to send to ${invoice.customer_email} (${invoice.invoice_id}):`, emailError.message);
+                sentCount++;
+                console.log(`     ✅ Email sent to ${customerEmail} (${invoice.invoice_id})`);
+
+              } catch (emailError) {
+                failedCount++;
+                console.error(`     ❌ Failed to send email to ${customerEmail} (${invoice.invoice_id}):`, emailError.message);
+              }
+            } else {
+              console.log(`   ⚠️  No email for invoice ${invoice.invoice_id} (${invoice.customer_name})`);
+            }
+
+            // Send SOCKET notification (NEW functionality)
+            try {
+              // Generate notification title and message based on reminder type
+              let notificationTitle, notificationMessage;
+              
+              switch (schedule.type) {
+                case 'due_tomorrow':
+                  notificationTitle = 'Payment Due Tomorrow';
+                  notificationMessage = `Your invoice ${invoice.invoice_id} is due tomorrow. Amount: $${invoice.amount.toFixed(2)}`;
+                  break;
+                case 'due_today':
+                  notificationTitle = 'Payment Due Today';
+                  notificationMessage = `Your invoice ${invoice.invoice_id} is due today. Amount: $${invoice.amount.toFixed(2)}`;
+                  break;
+                case 'due_in_3_days':
+                  notificationTitle = 'Payment Reminder';
+                  notificationMessage = `Your invoice ${invoice.invoice_id} is due in 3 days. Amount: $${invoice.amount.toFixed(2)}`;
+                  break;
+                case 'overdue_5_days':
+                  notificationTitle = 'Invoice Overdue';
+                  notificationMessage = `Your invoice ${invoice.invoice_id} is overdue. Amount: $${invoice.amount.toFixed(2)}`;
+                  break;
+                default:
+                  notificationTitle = 'Payment Reminder';
+                  notificationMessage = `Your invoice ${invoice.invoice_id} requires attention. Amount: $${invoice.amount.toFixed(2)}`;
+              }
+
+              // Create notification in database
+              const notification = await Notification.create({
+                user_id: customerId,
+                type: 'payment_reminder',
+                title: notificationTitle,
+                message: notificationMessage,
+                data: {
+                  invoice_id: invoice._id.toString(),
+                  invoice_number: invoice.invoice_id,
+                  amount: invoice.amount,
+                  due_date: invoice.due_date,
+                  status: invoice.status,
+                  reminder_type: schedule.type
+                }
+              });
+
+              // Emit socket notification
+              emitNotificationToUser(customerId.toString(), {
+                id: notification._id.toString(),
+                type: notification.type,
+                title: notification.title,
+                message: notification.message,
+                data: notification.data,
+                read: notification.read,
+                createdAt: notification.createdAt
+              });
+
+              notificationCount++;
+              console.log(`     🔔 Socket notification sent to user ${customerId} (${invoice.invoice_id})`);
+
+            } catch (notificationError) {
+              console.error(`     ❌ Failed to send socket notification for invoice ${invoice.invoice_id}:`, notificationError.message);
+            }
+
+          } catch (error) {
+            console.error(`     ❌ Error processing invoice ${invoice.invoice_id}:`, error.message);
           }
         }
 
         totalSent += sentCount;
         totalFailed += failedCount;
+        totalNotificationsSent += notificationCount;
 
         reminderDetails.push({
           type: schedule.type,
           description: schedule.description,
           totalInvoices: invoices.length,
-          sent: sentCount,
-          failed: failedCount
+          emails_sent: sentCount,
+          emails_failed: failedCount,
+          notifications_sent: notificationCount
         });
 
       } catch (error) {
@@ -137,6 +217,7 @@ export const paymentReminderEmails = async (processingDate = null) => {
     const result = {
       totalSent,
       totalFailed,
+      totalNotificationsSent,
       successRate: totalSent + totalFailed > 0 
         ? parseFloat(((totalSent / (totalSent + totalFailed)) * 100).toFixed(1))
         : 0,
@@ -144,7 +225,8 @@ export const paymentReminderEmails = async (processingDate = null) => {
     };
 
     console.log(`✅ Payment reminders completed:`);
-    console.log(`   📧 Sent: ${result.totalSent} emails`);
+    console.log(`   📧 Emails sent: ${result.totalSent}`);
+    console.log(`   🔔 Socket notifications sent: ${result.totalNotificationsSent}`);
     console.log(`   ❌ Failed: ${result.totalFailed} emails`);
     console.log(`   📈 Success rate: ${result.successRate}%`);
 

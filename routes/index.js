@@ -3,6 +3,7 @@ import authRoutes from './authRoutes.js';
 import userRoutes from './userRoutes.js';
 import adminRoutes from './adminRoutes.js';
 import clientRoutes from './clientRoutes.js';
+import notificationRoutes from './notificationRoutes.js';
 import { tokenMiddleware, authorize } from '../middleware/authMiddleware.js';
 // import productRoutes from './productRoutes.js';
 
@@ -13,6 +14,7 @@ router.use('/auth', authRoutes);                                                
 router.use('/users', tokenMiddleware, userRoutes);                                     // User routes (users can access their own, admins can access all)
 router.use('/admin', adminRoutes);                                                      // Additional admin-specific routes
 router.use('/client', clientRoutes);                                                    // Client-side routes (regular users)
+router.use('/client/notifications', notificationRoutes);                               // Notification routes (protected, under client)
 // router.use('/products', productRoutes);
 
 // Example route
@@ -25,7 +27,8 @@ router.get('/', (req, res) => {
         authAdmin: '/api/auth/admin',
         users: '/api/users',
         admin: '/api/admin',
-        client: '/api/client'
+        client: '/api/client',
+        notifications: '/api/client/notifications'
         // products: '/api/products'
       }
   });

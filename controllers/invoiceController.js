@@ -1,38 +1,30 @@
 import Invoice from '../models/Invoice.js';
 import User from '../models/User.js';
 import Unit from '../models/Unit.js';
+import Notification from '../models/Notification.js';
 import mongoose from 'mongoose';
 import getStripe from '../config/stripe.js';
+import { emitNotificationToUser } from '../utils/socketService.js';
 
-// Helper function to get payment link for an invoice
 const getPaymentLinkForInvoice = async (invoice) => {
-  // Only generate payment link for pending invoices with amount > 0
   if (invoice.status !== 'pending' || invoice.amount <= 0) {
     return null;
   }
-
   try {
     const stripe = getStripe();
-
-    // If invoice already has a checkout session, check if it's still valid
     if (invoice.stripe_checkout_session_id) {
       try {
         const session = await stripe.checkout.sessions.retrieve(
           invoice.stripe_checkout_session_id
         );
-        
-        // If session is still open, return its URL
         if (session.status === 'open') {
           return session.url;
         }
       } catch (error) {
-        // Session might not exist, continue to create a new one
         console.log('Existing session not found, will create new one when needed');
       }
     }
 
-    // Session doesn't exist or is expired - will be created when user requests payment
-    // Return null to indicate payment link needs to be generated
     return null;
   } catch (error) {
     console.error(`Error getting payment link for invoice ${invoice.invoice_id}:`, error);
@@ -59,10 +51,9 @@ const buildPagination = (page, limit, total) => {
 
 export const createInvoice = async (req, res) => {
   try {
-    // If invoice_id is provided and not empty, check for uniqueness
-    if (req.body.invoice_id && req.body.invoice_id.trim() !== '') {
+    if (req?.body?.invoice_id && req?.body?.invoice_id?.trim() !== '') {
       const existing = await Invoice.findOne({ 
-        invoice_id: req.body.invoice_id.toUpperCase().trim() 
+        invoice_id: req?.body?.invoice_id?.toUpperCase().trim() 
       });
       if (existing) {
         return res.status(400).json({
@@ -71,51 +62,37 @@ export const createInvoice = async (req, res) => {
         });
       }
     } else {
-      // Remove empty invoice_id to trigger auto-generation
-      delete req.body.invoice_id;
+      delete req?.body?.invoice_id;
     }
-
-    // Validate customer_id if provided
-    if (req.body.customer_id) {
-      // Check if customer_id is a valid MongoDB ObjectId
-      if (!mongoose.Types.ObjectId.isValid(req.body.customer_id)) {
+    if (req?.body?.customer_id) {
+      if (!mongoose.Types.ObjectId.isValid(req?.body?.customer_id)) {
         return res.status(400).json({
           success: false,
           message: 'Invalid customer_id format'
         });
       }
-
-      // Check if the user exists
-      const user = await User.findById(req.body.customer_id);
+      const user = await User.findById(req?.body?.customer_id);
       if (!user) {
         return res.status(404).json({
           success: false,
-          message: 'Customer not found with the provided customer_id'
+          message: 'Customer not found with the provided customer_id.'
         });
       }
     }
-
-    // Normalize unit_number to array format
-    if (req.body.unit_number) {
-      // If it's a string, convert to array
+    if (req?.body?.unit_number) {
       if (typeof req.body.unit_number === 'string') {
         req.body.unit_number = [req.body.unit_number.trim()];
       } else if (Array.isArray(req.body.unit_number)) {
-        // Trim and filter empty strings
         req.body.unit_number = req.body.unit_number
           .map(num => typeof num === 'string' ? num.trim() : String(num).trim())
           .filter(num => num !== '');
       }
-
-      // Validate that we have at least one unit number
       if (!Array.isArray(req.body.unit_number) || req.body.unit_number.length === 0) {
         return res.status(400).json({
           success: false,
           message: 'At least one unit number is required'
         });
       }
-
-      // Validate that all unit numbers exist
       const units = await Unit.find({ unit_number: { $in: req.body.unit_number } });
       const foundUnitNumbers = units.map(u => u.unit_number);
       const missingUnits = req.body.unit_number.filter(num => !foundUnitNumbers.includes(num));
@@ -127,18 +104,14 @@ export const createInvoice = async (req, res) => {
         });
       }
     }
-
-    // If customer_email is not provided, get it from customer_id (User model)
     if (!req.body.customer_email && req.body.customer_id) {
       try {
         const user = await User.findById(req.body.customer_id).select('email name');
         if (user && user.email) {
           req.body.customer_email = user.email.toLowerCase().trim();
-          // Also populate customer_name if not provided
           if (!req.body.customer_name && user.name) {
             req.body.customer_name = user.name;
           }
-          console.log(`📧 Auto-populated customer_email from User (${req.body.customer_id}): ${req.body.customer_email}`);
         } else {
           console.warn(`⚠️  User not found or has no email for customer_id: ${req.body.customer_id}`);
         }
@@ -148,32 +121,18 @@ export const createInvoice = async (req, res) => {
     }
 
     const invoice = await Invoice.create(req.body);
-
-    // Get payment link for the invoice
     const invoiceData = invoice.toObject();
-    
-    // Automatically create Stripe Checkout Session for new invoices if pending and amount > 0
-    // We wait for it to complete so payment_link is available in response
     if (invoice.status === 'pending' && invoice.amount > 0) {
       try {
-        // Reload invoice with fresh data from DB (in case customer_email was auto-populated)
         const freshInvoice = await Invoice.findById(invoice._id);
-        if (freshInvoice) {
-          console.log(`🔵 Attempting to create Stripe session for invoice ${freshInvoice.invoice_id}...`);
-          console.log(`   Invoice customer_email: ${freshInvoice.customer_email || 'NOT SET'}`);
-          console.log(`   Invoice customer_id: ${freshInvoice.customer_id || 'NOT SET'}`);
-          
+        if (freshInvoice) {          
           const paymentLink = await createStripeCheckoutSessionForInvoice(freshInvoice);
           
           if (paymentLink) {
-            console.log(`✅ Payment link created: ${paymentLink.substring(0, 50)}...`);
             invoiceData.payment_link = paymentLink;
           } else {
-            console.log(`⚠️  Payment link is null for invoice ${freshInvoice.invoice_id} - check server logs above`);
             invoiceData.payment_link = null;
           }
-          
-          // Reload again to get the updated stripe_checkout_session_id
           const updatedInvoice = await Invoice.findById(invoice._id);
           if (updatedInvoice) {
             invoiceData.stripe_checkout_session_id = updatedInvoice.stripe_checkout_session_id;
@@ -181,11 +140,65 @@ export const createInvoice = async (req, res) => {
           }
         }
       } catch (error) {
-        console.error(`❌ Error in createInvoice when creating Stripe session:`, error);
         invoiceData.payment_link = null;
       }
     } else {
       invoiceData.payment_link = null;
+    }
+    if (invoice.customer_id) {
+      try {
+        const notification = await Notification.create({
+          user_id: invoice.customer_id,
+          type: 'invoice_created',
+          title: 'New Invoice Created',
+          message: `A new invoice ${invoice.invoice_id} has been created for you. Amount: $${invoice.amount.toFixed(2)}`,
+          data: {
+            invoice_id: invoice._id.toString(),
+            invoice_number: invoice.invoice_id,
+            amount: invoice.amount,
+            due_date: invoice.due_date,
+            status: invoice.status
+          }
+        });
+        emitNotificationToUser(invoice.customer_id.toString(), {
+          id: notification._id.toString(),
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          data: notification.data,
+          read: notification.read,
+          createdAt: notification.createdAt
+        });
+
+        console.log(`📢 Notification sent to customer ${invoice.customer_id} for invoice ${invoice.invoice_id}`);
+      } catch (error) {
+        console.error(`❌ Error sending notification for invoice ${invoice.invoice_id}:`, error.message);
+      }
+    }
+
+    // Send notification to admins about new invoice creation
+    try {
+      const { emitNotificationToAdmin } = await import('../utils/socketService.js');
+      await emitNotificationToAdmin({
+        type: 'invoice_created',
+        title: 'New Invoice Created',
+        message: `Invoice ${invoice.invoice_id} created for ${invoice.customer_name || 'Customer'} - $${invoice.amount.toFixed(2)}`,
+        priority: 'medium',
+        data: {
+          invoice_id: invoice._id.toString(),
+          invoice_number: invoice.invoice_id,
+          customer_id: invoice.customer_id?.toString(),
+          customer_name: invoice.customer_name,
+          customer_email: invoice.customer_email,
+          amount: invoice.amount,
+          due_date: invoice.due_date,
+          status: invoice.status,
+          created_at: invoice.createdAt
+        }
+      });
+      console.log(`📢 Admin notification sent for new invoice ${invoice.invoice_id}`);
+    } catch (adminNotificationError) {
+      console.error(`❌ Failed to send admin notification for invoice creation:`, adminNotificationError.message);
     }
 
     res.status(201).json({
@@ -665,8 +678,75 @@ export const updateInvoice = async (req, res) => {
       }
     }
 
+    // Check if status is being changed to 'paid' (for notification)
+    const wasPaid = invoice.status === 'paid';
+    const isBeingPaid = req.body.status === 'paid' && !wasPaid;
+    const oldStatus = invoice.status;
+    const newStatus = req.body.status || invoice.status;
+
     Object.assign(invoice, req.body);
     await invoice.save();
+
+    // Send notification if invoice was just marked as paid
+    if (isBeingPaid && invoice.customer_id) {
+      try {
+        const notification = await Notification.create({
+          user_id: invoice.customer_id,
+          type: 'invoice_paid',
+          title: 'Payment Received',
+          message: `Your invoice ${invoice.invoice_id} has been marked as paid. Amount: $${invoice.amount.toFixed(2)}`,
+          data: {
+            invoice_id: invoice._id.toString(),
+            invoice_number: invoice.invoice_id,
+            amount: invoice.amount,
+            paid_at: invoice.paid_at || new Date(),
+            status: 'paid'
+          }
+        });
+
+        // Emit socket notification
+        emitNotificationToUser(invoice.customer_id.toString(), {
+          id: notification._id.toString(),
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          data: notification.data,
+          read: notification.read,
+          createdAt: notification.createdAt
+        });
+
+        console.log(`🔔 Payment notification sent to user ${invoice.customer_id} for invoice ${invoice.invoice_id}`);
+      } catch (notificationError) {
+        console.error(`❌ Failed to send payment notification for invoice ${invoice.invoice_id}:`, notificationError.message);
+      }
+    }
+
+    // Send notification to admins about invoice update (if status changed or important fields updated)
+    if (oldStatus !== newStatus || req.body.amount || req.body.due_date) {
+      try {
+        const { emitNotificationToAdmin } = await import('../utils/socketService.js');
+        await emitNotificationToAdmin({
+          type: 'invoice_updated',
+          title: 'Invoice Updated',
+          message: `Invoice ${invoice.invoice_id} updated - Status: ${oldStatus} → ${newStatus || oldStatus}`,
+          priority: 'medium',
+          data: {
+            invoice_id: invoice._id.toString(),
+            invoice_number: invoice.invoice_id,
+            customer_id: invoice.customer_id?.toString(),
+            customer_name: invoice.customer_name,
+            old_status: oldStatus,
+            new_status: newStatus || oldStatus,
+            amount: invoice.amount,
+            due_date: invoice.due_date,
+            updated_at: invoice.updatedAt
+          }
+        });
+        console.log(`📢 Admin notification sent for invoice update ${invoice.invoice_id}`);
+      } catch (adminNotificationError) {
+        console.error(`❌ Failed to send admin notification for invoice update:`, adminNotificationError.message);
+      }
+    }
 
     // Get payment link if invoice is pending
     const invoiceData = invoice.toObject();

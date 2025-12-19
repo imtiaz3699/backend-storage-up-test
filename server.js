@@ -1,4 +1,5 @@
 import express from "express";
+import http from "http";
 import mongoose from "mongoose";
 import cors from "cors";
 import helmet from "helmet";
@@ -10,66 +11,15 @@ import { fileURLToPath } from "url";
 import routes from "./routes/index.js";
 import { initializeDailyProcessing } from "./jobs/index.js";
 import { handleStripeWebhook } from "./controllers/paymentController.js";
-import { Server } from "socket.io";
-import http from 'http';
-
-
-
+import { initializeSocket } from "./utils/socketService.js";
+import { initializeSocketHandlers } from "./socket/socketHandler.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config();
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:7000",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:7000",
-  "https://storag-up-admin-64aa23516b44.herokuapp.com",
-  "https://5a8385ef78c9.ngrok-free.app",
-  "http://192.168.100.141:7000",
-  "https://storag-up-d5c70a30c6c7.herokuapp.com"
-];
+
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server,{
-  cors:{
-    origin: allowedOrigins,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-Requested-With",
-      "Accept",
-      "Origin",
-    ],
-  }
-})
-
-io.on('connection', (socket)=> {
-  console.log("Client connection:",socket.io);
-  socket.on('join-user-room', (userId)=> {
-    socket.join(`user-${userId}`);
-    console.log(`user ${userId} joined their room.`)
-  });
-  socket.on('disconnect', ()=> {const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:7000",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:7000",
-  "https://storag-up-admin-64aa23516b44.herokuapp.com",
-  "https://5a8385ef78c9.ngrok-free.app",
-  "http://192.168.100.141:7000",
-  "https://storag-up-d5c70a30c6c7.herokuapp.com"
-];
-    console.log(`Client disconnected:`, socket.id);
-  })
-})
-app.set('io', io);
-
-
-
 
 // Configure Helmet to work with CORS (after CORS middleware)
 app.use(
@@ -81,7 +31,15 @@ app.use(
 );
 
 // CORS configuration - single unified settings
-
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:7000",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:7000",
+  "https://storag-up-admin-64aa23516b44.herokuapp.com",
+  "https://5a8385ef78c9.ngrok-free.app",
+  "http://192.168.100.141:7000",
+];
 
 app.use(
   cors({
@@ -96,7 +54,10 @@ app.use(
         callback(null, true);
       } else {
         // In development, allow localhost on any port
-        if (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')) {
+        if (
+          process.env.NODE_ENV !== "production" &&
+          origin.startsWith("http://localhost:")
+        ) {
           callback(null, true);
         } else {
           // Reject other origins (don't throw error, just reject)
@@ -114,7 +75,7 @@ app.use(
       "Origin",
     ],
     exposedHeaders: ["Content-Range", "X-Content-Range"],
-    optionsSuccessStatus: 200 // Support legacy browsers
+    optionsSuccessStatus: 200, // Support legacy browsers
   })
 );
 app.use(morgan("dev"));
@@ -123,8 +84,8 @@ app.use(cookieParser());
 // Stripe Webhook Route (MUST be before JSON body parser)
 // Webhooks need raw body for signature verification
 app.post(
-  '/api/webhooks/stripe',
-  express.raw({ type: 'application/json' }),
+  "/api/webhooks/stripe",
+  express.raw({ type: "application/json" }),
   handleStripeWebhook
 );
 
@@ -151,8 +112,8 @@ mongoose
     console.log("✅ MongoDB connected successfully");
   })
   .catch((error) => {
-    console.log(error,'Server Error:=>')
-    
+    console.log(error, "Server Error:=>");
+
     // Don't exit - let the app continue (some routes might work)
     // process.exit(1);
   });
@@ -194,8 +155,17 @@ app.use((req, res) => {
   });
 });
 
+// Create HTTP server
+const server = http.createServer(app);
+
+// Initialize Socket.io
+const io = initializeSocket(server);
+if (io) {
+  initializeSocketHandlers(io);
+}
+
 // Start server
-app.listen(PORT, async () => {
+server.listen(PORT, async () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
 
@@ -206,15 +176,8 @@ app.listen(PORT, async () => {
     process.env.SMTP_PASSWORD ||
     process.env.EMAIL_PASSWORD;
   if (process.env.SMTP_HOST && smtpUser && smtpPass) {
-    console.log(`📧 Email service configured: ${process.env.SMTP_HOST}`);
-    console.log(`📧 Email from: ${process.env.EMAIL_FROM || "Not set"}`);
-
-    // Initialize email service on startup to catch configuration errors early
     try {
       const { sendEmail } = await import("./utils/emailService.js");
-      // Trigger initialization by calling initTransporter (it will be cached)
-      console.log(`📧 Initializing email service...`);
-      // The transporter will be initialized on first use, but we log the config here
     } catch (error) {
       console.error(
         `📧 ⚠️  Email service initialization error:`,
@@ -227,7 +190,10 @@ app.listen(PORT, async () => {
     try {
       initializeDailyProcessing();
     } catch (error) {
-      console.error(`📅 ⚠️  Daily Processing initialization error:`, error.message);
+      console.error(
+        `📅 ⚠️  Daily Processing initialization error:`,
+        error.message
+      );
     }
   } else {
     console.log(
@@ -238,4 +204,3 @@ app.listen(PORT, async () => {
     );
   }
 });
-

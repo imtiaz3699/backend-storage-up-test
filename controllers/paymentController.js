@@ -3,6 +3,8 @@ import Invoice from '../models/Invoice.js';
 import User from '../models/User.js';
 import Payment from '../models/Payment.js';
 import Transaction from '../models/Transaction.js';
+import Notification from '../models/Notification.js';
+import { emitNotificationToUser } from '../utils/socketService.js';
 
 /**
  * Create Stripe Checkout Session for an invoice
@@ -87,6 +89,11 @@ export const createInvoiceCheckoutSession = async (req, res) => {
     let baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
     // Remove trailing slash to avoid double slashes
     baseUrl = baseUrl.replace(/\/+$/, '');
+
+    console.log(`🔵 Creating Stripe checkout session for invoice ${invoice.invoice_id}`);
+    console.log(`   Using baseUrl: ${baseUrl} (from CLIENT_URL/FRONTEND_URL env var)`);
+    console.log(`   Success URL will be: ${baseUrl}/invoices/${invoice._id}/payment/success`);
+    console.log(`   Cancel URL will be: ${baseUrl}/invoices/${invoice._id}/payment/cancel`);
 
     // Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
@@ -270,6 +277,64 @@ export const handleStripeWebhook = async (req, res) => {
 
             console.log(`✅ Invoice ${invoice.invoice_id} marked as paid via webhook`);
 
+            // Send notification to user about successful payment
+            if (invoice.customer_id) {
+              try {
+                const notification = await Notification.create({
+                  user_id: invoice.customer_id,
+                  type: 'invoice_paid',
+                  title: 'Payment Successful',
+                  message: `Your payment of $${invoice.amount.toFixed(2)} for invoice ${invoice.invoice_id} has been successfully processed.`,
+                  data: {
+                    invoice_id: invoice._id.toString(),
+                    invoice_number: invoice.invoice_id,
+                    amount: invoice.amount,
+                    paid_at: invoice.paid_at,
+                    status: 'paid'
+                  }
+                });
+
+                // Emit socket notification
+                emitNotificationToUser(invoice.customer_id.toString(), {
+                  id: notification._id.toString(),
+                  type: notification.type,
+                  title: notification.title,
+                  message: notification.message,
+                  data: notification.data,
+                  read: notification.read,
+                  createdAt: notification.createdAt
+                });
+
+                console.log(`🔔 Payment notification sent to user ${invoice.customer_id} for invoice ${invoice.invoice_id}`);
+              } catch (notificationError) {
+                console.error(`❌ Failed to send payment notification for invoice ${invoice.invoice_id}:`, notificationError.message);
+              }
+            }
+
+            // Send notification to admins about successful payment
+            try {
+              const { emitNotificationToAdmin } = await import('../utils/socketService.js');
+              await emitNotificationToAdmin({
+                type: 'payment_received',
+                title: 'Payment Received',
+                message: `${invoice.customer_name || 'Customer'} paid $${invoice.amount.toFixed(2)} for invoice ${invoice.invoice_id}`,
+                priority: 'high',
+                data: {
+                  invoice_id: invoice._id.toString(),
+                  invoice_number: invoice.invoice_id,
+                  customer_id: invoice.customer_id?.toString(),
+                  customer_name: invoice.customer_name,
+                  customer_email: invoice.customer_email,
+                  amount: invoice.amount,
+                  paid_at: invoice.paid_at,
+                  payment_method: 'stripe'
+                }
+              });
+              console.log(`📢 Admin notification sent for payment on invoice ${invoice.invoice_id}`);
+            } catch (adminNotificationError) {
+              console.error(`❌ Failed to send admin notification for payment:`, adminNotificationError.message);
+            }
+
             // Create Payment record if it doesn't exist
             try {
               const existingPayment = await Payment.findOne({
@@ -345,6 +410,64 @@ export const handleStripeWebhook = async (req, res) => {
 
           console.log(`✅ Invoice ${invoiceByIntent.invoice_id} marked as paid via payment_intent webhook`);
 
+          // Send notification to user about successful payment
+          if (invoiceByIntent.customer_id) {
+            try {
+              const notification = await Notification.create({
+                user_id: invoiceByIntent.customer_id,
+                type: 'invoice_paid',
+                title: 'Payment Successful',
+                message: `Your payment of $${invoiceByIntent.amount.toFixed(2)} for invoice ${invoiceByIntent.invoice_id} has been successfully processed.`,
+                data: {
+                  invoice_id: invoiceByIntent._id.toString(),
+                  invoice_number: invoiceByIntent.invoice_id,
+                  amount: invoiceByIntent.amount,
+                  paid_at: invoiceByIntent.paid_at,
+                  status: 'paid'
+                }
+              });
+
+              // Emit socket notification
+              emitNotificationToUser(invoiceByIntent.customer_id.toString(), {
+                id: notification._id.toString(),
+                type: notification.type,
+                title: notification.title,
+                message: notification.message,
+                data: notification.data,
+                read: notification.read,
+                createdAt: notification.createdAt
+              });
+
+              console.log(`🔔 Payment notification sent to user ${invoiceByIntent.customer_id} for invoice ${invoiceByIntent.invoice_id}`);
+            } catch (notificationError) {
+              console.error(`❌ Failed to send payment notification for invoice ${invoiceByIntent.invoice_id}:`, notificationError.message);
+            }
+          }
+
+          // Send notification to admins about successful payment
+          try {
+            const { emitNotificationToAdmin } = await import('../utils/socketService.js');
+            await emitNotificationToAdmin({
+              type: 'payment_received',
+              title: 'Payment Received',
+              message: `${invoiceByIntent.customer_name || 'Customer'} paid $${invoiceByIntent.amount.toFixed(2)} for invoice ${invoiceByIntent.invoice_id}`,
+              priority: 'high',
+              data: {
+                invoice_id: invoiceByIntent._id.toString(),
+                invoice_number: invoiceByIntent.invoice_id,
+                customer_id: invoiceByIntent.customer_id?.toString(),
+                customer_name: invoiceByIntent.customer_name,
+                customer_email: invoiceByIntent.customer_email,
+                amount: invoiceByIntent.amount,
+                paid_at: invoiceByIntent.paid_at,
+                payment_method: 'stripe'
+              }
+            });
+            console.log(`📢 Admin notification sent for payment on invoice ${invoiceByIntent.invoice_id}`);
+          } catch (adminNotificationError) {
+            console.error(`❌ Failed to send admin notification for payment:`, adminNotificationError.message);
+          }
+
           // Create Payment record if it doesn't exist
           try {
             const existingPayment = await Payment.findOne({
@@ -415,6 +538,30 @@ export const handleStripeWebhook = async (req, res) => {
           await failedInvoice.save();
 
           console.log(`❌ Payment failed for invoice: ${failedInvoice.invoice_id}`);
+
+          // Send notification to admins about failed payment
+          try {
+            const { emitNotificationToAdmin } = await import('../utils/socketService.js');
+            await emitNotificationToAdmin({
+              type: 'payment_failed',
+              title: 'Payment Failed',
+              message: `Payment failed for invoice ${failedInvoice.invoice_id} - ${failedInvoice.customer_name || 'Customer'}`,
+              priority: 'high',
+              data: {
+                invoice_id: failedInvoice._id.toString(),
+                invoice_number: failedInvoice.invoice_id,
+                customer_id: failedInvoice.customer_id?.toString(),
+                customer_name: failedInvoice.customer_name,
+                customer_email: failedInvoice.customer_email,
+                amount: failedInvoice.amount,
+                failure_reason: failedPayment.last_payment_error?.message || 'Unknown error',
+                failed_at: new Date().toISOString()
+              }
+            });
+            console.log(`📢 Admin notification sent for failed payment on invoice ${failedInvoice.invoice_id}`);
+          } catch (adminNotificationError) {
+            console.error(`❌ Failed to send admin notification for failed payment:`, adminNotificationError.message);
+          }
         }
         break;
 

@@ -365,9 +365,21 @@ export const deletePaymentMethod = async (req, res) => {
   }
 };
 
+/**
+ * Format date to DD/MM/YYYY format
+ */
+const formatDate = (date) => {
+  if (!date) return null;
+  const d = new Date(date);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
 export const getPaymentDashboard = async (req, res) => {
   try {
-    const { userId } = req.params; // Get userId from params
+    const { userId } = req.params; // Get userId from params (optional, for admin)
     const currentUser = req.user;
 
     if (!currentUser) {
@@ -403,17 +415,10 @@ export const getPaymentDashboard = async (req, res) => {
     }
 
     // Get current balance (sum of pending and overdue invoices)
-    const userEmail = targetUser.email.toLowerCase().trim();
-    const userName = targetUser.name.trim();
-    
     const pendingInvoices = await Invoice.aggregate([
       {
         $match: {
-          $or: [
-            { customer_email: userEmail },
-            { customer_name: userName },
-            { customer_id: new mongoose.Types.ObjectId(targetUserId) }
-          ],
+          customer_id: new mongoose.Types.ObjectId(targetUserId),
           status: { $in: ['pending', 'overdue'] }
         }
       },
@@ -464,30 +469,45 @@ export const getPaymentDashboard = async (req, res) => {
       id: method._id,
       brand: method.card_brand,
       last4: method.card_last4,
-      display: `${method.card_brand ? method.card_brand.charAt(0).toUpperCase() + method.card_brand.slice(1) : 'Card'} **** ${method.card_last4}`,
-      exp_month: method.card_exp_month,
-      exp_year: method.card_exp_year,
+      display: method.card_last4 
+        ? `${method.card_brand ? method.card_brand.charAt(0).toUpperCase() + method.card_brand.slice(1) : 'Card'} **** ${method.card_last4}`
+        : 'No payment method',
       card_holder_name: method.card_holder_name,
       is_default: method.is_default
     }));
 
     // Get default payment method
-    const defaultPaymentMethod = formattedPaymentMethods.find(pm => pm.is_default) || null;
+    const defaultPaymentMethod = formattedPaymentMethods.find(pm => pm.is_default) || formattedPaymentMethods[0] || null;
 
+    // Format response to match dashboard cards
     res.status(200).json({
       success: true,
       data: {
+        // Current Balance Card
         current_balance: {
           amount: currentBalance || 0,
-          due_date: earliestDueDate || null,
-          formatted_amount: `$${(currentBalance || 0).toFixed(2)}`
+          formatted_amount: currentBalance ? `$${currentBalance.toFixed(2)}` : '$0.00',
+          due_date: earliestDueDate ? formatDate(earliestDueDate) : null,
+          due_date_raw: earliestDueDate || null
         },
+        // Autopay Status Card
         autopay_status: {
-          enabled: autopayEnabled || false,
-          method: defaultPaymentMethod?.brand || null,
-          next_payment_date: nextPaymentDate || null,
-          display_method: defaultPaymentMethod?.display || null
+          enabled: autopayEnabled,
+          method: defaultPaymentMethod?.brand || 'Card',
+          display_method: defaultPaymentMethod?.display || 'No payment method',
+          next_payment_date: nextPaymentDate ? formatDate(nextPaymentDate) : null,
+          next_payment_date_raw: nextPaymentDate || null
         },
+        // Payment Methods Card
+        payment_method: {
+          display: defaultPaymentMethod?.display || 'No payment method',
+          brand: defaultPaymentMethod?.brand || null,
+          last4: defaultPaymentMethod?.last4 || null,
+          card_holder_name: defaultPaymentMethod?.card_holder_name || null,
+          due_date: earliestDueDate ? formatDate(earliestDueDate) : null,
+          due_date_raw: earliestDueDate || null
+        },
+        // All payment methods (for reference)
         payment_methods: formattedPaymentMethods || []
       }
     });
