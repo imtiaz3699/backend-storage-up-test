@@ -21,6 +21,12 @@ import {
 } from '../controllers/paymentRecordController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { getTransactionsByUserId } from '../controllers/transactionController.js';
+import {
+  getFacilityMap,
+  saveFacilityMap,
+  updateUnitLayout,
+  deleteFacilityMap
+} from '../controllers/facilityMapController.js';
 
 const router = express.Router();
 
@@ -54,5 +60,11 @@ router.get('/transactions', protect, async (req, res) => {
   };
   return getTransactionsByUserId(modifiedReq, res);
 }); // Get current user's transactions
+
+// Facility Map routes (singleton - only one map exists in the app)
+router.get('/facility-map', protect, getFacilityMap);                              // Get the facility map
+router.post('/facility-map', protect, saveFacilityMap);                            // Save/update facility map (upsert)
+router.put('/facility-map/unit', protect, updateUnitLayout);                       // Update single unit position/layout
+router.delete('/facility-map', protect, deleteFacilityMap);                        // Delete facility map
 
 export default router;

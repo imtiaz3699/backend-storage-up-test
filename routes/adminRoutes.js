@@ -6,6 +6,12 @@ import {
   markAllAdminNotificationsAsRead,
   deleteAdminNotification
 } from '../controllers/adminNotificationController.js';
+import {
+  getFacilityMap,
+  saveFacilityMap,
+  updateUnitLayout,
+  deleteFacilityMap
+} from '../controllers/facilityMapController.js';
 import { getAllUsers, getUserById, updateUser, updateUserRentedUnits, updateUserRentedUnit, removeUserRentedUnit, deleteUser } from '../controllers/userController.js';
 import {
   createLocation,
@@ -119,7 +125,14 @@ import { uploadLocationImages } from '../middleware/uploadMiddleware.js';
 
 const router = express.Router();
 
-// Ensure every admin route requires a valid token and admin privileges
+// Facility Map routes (accessible without admin privileges, just regular token auth)
+// These must be BEFORE the admin middleware to bypass admin requirements
+router.get('/facility-map', tokenMiddleware, getFacilityMap);
+router.post('/facility-map', tokenMiddleware, saveFacilityMap);
+router.put('/facility-map/unit', tokenMiddleware, updateUnitLayout); // Update single unit position
+router.delete('/facility-map', tokenMiddleware, deleteFacilityMap);
+
+// Ensure every other admin route requires a valid token and admin privileges
 router.use(tokenMiddleware, protectAdmin);
 
 // Admin User Management routes
@@ -244,6 +257,7 @@ router.get('/notifications/unread-count', getUnreadAdminNotificationsCount); // 
 router.put('/notifications/:id/read', markAdminNotificationAsRead);       // Mark notification as read
 router.put('/notifications/read-all', markAllAdminNotificationsAsRead);   // Mark all notifications as read
 router.delete('/notifications/:id', deleteAdminNotification);             // Delete a notification
+
 
 export default router;
 
