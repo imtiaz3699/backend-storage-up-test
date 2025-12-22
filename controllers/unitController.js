@@ -1,4 +1,5 @@
 import Unit from "../models/Unit.js";
+import User from "../models/User.js";
 
 const buildPagination = (page, limit, total) => {
   const totalPages = Math.ceil(total / limit) || 1;
@@ -71,9 +72,33 @@ export const getUnits = async (req, res) => {
     // Build filter object
     const filter = {};
 
-    // Filter by unit_number if provided
-    if (req.query.unit_number) {
-      filter.unit_number = { $regex: req.query.unit_number, $options: 'i' };
+    // Filter by unit_number if provided and not empty
+    if (req.query.unit_number && req.query.unit_number.trim() !== '') {
+      filter.unit_number = { $regex: req.query.unit_number.trim(), $options: 'i' };
+    }
+
+    // Filter by customer_name if provided and not empty
+    // This requires finding users by name first, then filtering units by their emails
+    let customerEmailFilter = null;
+    if (req.query.customer_name && req.query.customer_name.trim() !== '') {
+      const customerNameSearch = req.query.customer_name.trim();
+      const customerNameRegex = { $regex: customerNameSearch, $options: 'i' };
+      const customers = await User.find({ 
+        name: customerNameRegex 
+      }).select('email');
+      
+      if (customers.length > 0) {
+        const customerEmails = customers.map(c => c.email.toLowerCase());
+        customerEmailFilter = { $in: customerEmails };
+      } else {
+        // If no customers found with this name, return empty result
+        customerEmailFilter = { $in: [] }; // Empty array means no matches
+      }
+    }
+
+    // Filter by status (unit_is) if provided and not empty
+    if (req.query.status && req.query.status.trim() !== '') {
+      filter.unit_is = req.query.status.trim().toLowerCase();
     }
 
     // Build sort object
@@ -90,16 +115,59 @@ export const getUnits = async (req, res) => {
       }
     }
 
+    // If customer_name filter is provided, add customer_email filter
+    if (customerEmailFilter) {
+      filter.customer_email = customerEmailFilter;
+    }
+
     const [total, units] = await Promise.all([
       Unit.countDocuments(filter),
       Unit.find(filter).skip(skip).limit(limit).sort(sort),
     ]);
 
+    // For rented units, fetch customer information
+    const unitsWithCustomerInfo = await Promise.all(
+      units.map(async (unit) => {
+        const unitObj = unit.toObject();
+        
+        // If unit is rented and has customer_email, fetch customer details
+        if (unit.unit_is === 'rented' && unit.customer_email) {
+          try {
+            const customer = await User.findOne({ 
+              email: unit.customer_email.toLowerCase() 
+            }).select('_id name email phoneNumber roles createdAt');
+            
+            if (customer) {
+              unitObj.customer_info = {
+                _id: customer._id,
+                name: customer.name,
+                email: customer.email,
+                phoneNumber: customer.phoneNumber,
+                roles: customer.roles,
+                createdAt: customer.createdAt
+              };
+            } else {
+              // Customer email exists but user not found in database
+              unitObj.customer_info = null;
+            }
+          } catch (error) {
+            console.error(`Error fetching customer info for unit ${unit._id}:`, error);
+            unitObj.customer_info = null;
+          }
+        } else {
+          // Unit is vacant or has no customer_email
+          unitObj.customer_info = null;
+        }
+        
+        return unitObj;
+      })
+    );
+
     res.status(200).json({
       success: true,
-      count: units.length,
+      count: unitsWithCustomerInfo.length,
       pagination: buildPagination(page, limit, total),
-      data: units,
+      data: unitsWithCustomerInfo,
     });
   } catch (error) {
     res.status(500).json({

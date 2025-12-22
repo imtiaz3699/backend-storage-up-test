@@ -510,3 +510,4 @@ export const markAllNotificationsAsRead = async () => {
 4. Create an invoice for that customer
 5. Customer should receive notification immediately!
 
+

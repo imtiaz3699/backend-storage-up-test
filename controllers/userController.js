@@ -137,11 +137,6 @@ export const createUser = async (req, res) => {
 
     await user.save();
 
-    // Create default invoices for the new user (async, don't wait)
-    createDefaultInvoicesForUser(user).catch(error => {
-      console.error(`Failed to create default invoices for user ${user._id}:`, error);
-    });
-
     // Create default units for the new user (async, don't wait)
     createDefaultUnitsForUser(user).catch(error => {
       console.error(`Failed to create default units for user ${user._id}:`, error);
@@ -164,6 +159,167 @@ export const createUser = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error creating user",
+      error: error.message,
+    });
+  }
+};
+
+// Create a new user and assign a unit to them
+export const createUserWithUnit = async (req, res) => {
+  const currentUser = req.user;
+  const userRoles = currentUser?.roles || [];
+  const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+
+  // Only admins can create users
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: "Administrator privileges are required to create users.",
+      code: "AUTH_FORBIDDEN"
+    });
+  }
+
+  try {
+    const { name, email, phoneNumber, password, roles, unitId, billing_cycle, deposit_amount, start_date, end_date } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !phoneNumber || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Name, email, phoneNumber, and password are required",
+      });
+    }
+
+    if (!unitId) {
+      return res.status(400).json({
+        success: false,
+        message: "unitId is required to assign a unit to the user",
+      });
+    }
+
+    // Validate unitId format
+    if (!mongoose.Types.ObjectId.isValid(unitId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid unitId format",
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: "User with this email already exists",
+      });
+    }
+
+    // Check if unit exists
+    const unit = await Unit.findById(unitId);
+    if (!unit) {
+      return res.status(404).json({
+        success: false,
+        message: "Unit not found",
+      });
+    }
+
+    // Check if unit is already rented to someone else
+    if (unit.unit_is === 'rented' && unit.customer_email) {
+      return res.status(400).json({
+        success: false,
+        message: `Unit is already rented to another customer (${unit.customer_email})`,
+      });
+    }
+
+    // Create new user
+    const user = new User({
+      name,
+      email,
+      phoneNumber,
+      password,
+      roles: roles || ["user"],
+    });
+
+    await user.save();
+
+    // Assign unit to the newly created user
+    unit.customer_email = user.email.toLowerCase().trim();
+    unit.unit_is = 'rented';
+    await unit.save();
+
+    // Add unit to user's rented_units array
+    const rentedUnitData = {
+      unit_id: unit._id,
+      unit_number: unit.unit_number,
+      location: unit.location,
+      location_two: unit.location_two,
+      description: unit.description,
+      unit_details: unit.unit_details || {},
+      dimensions: unit.dimensions || {},
+      unit_is: 'rented',
+      customer_email: user.email.toLowerCase().trim(),
+      monthly_rate: unit.monthly_rate || 0,
+      other_information: unit.other_information || {},
+      maintenance_comments: unit.maintenance_comments,
+      billing_cycle: billing_cycle || '',
+      deposit_amount: deposit_amount || 0,
+      start_date: start_date ? new Date(start_date) : new Date(), // Default to current date if not provided
+      end_date: end_date ? new Date(end_date) : null
+    };
+
+    // Initialize rented_units array if it doesn't exist
+    if (!user.rented_units) {
+      user.rented_units = [];
+    }
+
+    // Add the unit to rented_units array
+    user.rented_units.push(rentedUnitData);
+    await user.save();
+
+    // Fetch updated user with populated rented_units
+    const updatedUser = await User.findById(user._id).populate('rented_units.unit_id');
+
+    // Fetch updated unit with customer info
+    const updatedUnit = await Unit.findById(unitId);
+
+    res.status(201).json({
+      success: true,
+      message: "User created successfully and unit assigned",
+      data: {
+        user: {
+          _id: updatedUser._id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          phoneNumber: updatedUser.phoneNumber,
+          roles: updatedUser.roles,
+          rented_units: updatedUser.rented_units,
+          createdAt: updatedUser.createdAt
+        },
+        unit: updatedUnit
+      },
+    });
+  } catch (error) {
+    // If user was created but unit assignment failed, we should handle it
+    // For now, we'll just return the error
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors,
+      });
+    }
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "User with this email already exists",
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Error creating user with unit assignment",
       error: error.message,
     });
   }
@@ -1485,19 +1641,6 @@ export const getUserInvoicesById = async (req, res) => {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip = (page - 1) * limit;
-
-    // First check if user has ANY invoices (without status filter)
-    const totalInvoicesCount = await Invoice.countDocuments({ customer_id: userId });
-
-    // If no invoices exist at all, create 5 default invoices for the user
-    if (totalInvoicesCount === 0) {
-      try {
-        await createDefaultInvoicesForUser(user);
-      } catch (error) {
-        console.error(`Error creating default invoices for user ${userId}:`, error);
-        // Continue even if default invoice creation fails
-      }
-    }
 
     // Build query with optional status filter
     const query = { customer_id: userId };

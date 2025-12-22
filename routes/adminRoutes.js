@@ -12,7 +12,7 @@ import {
   updateUnitLayout,
   deleteFacilityMap
 } from '../controllers/facilityMapController.js';
-import { getAllUsers, getUserById, updateUser, updateUserRentedUnits, updateUserRentedUnit, removeUserRentedUnit, deleteUser } from '../controllers/userController.js';
+import { getAllUsers, getUserById, updateUser, updateUserRentedUnits, updateUserRentedUnit, removeUserRentedUnit, deleteUser, createUserWithUnit } from '../controllers/userController.js';
 import {
   createLocation,
   getLocations,
@@ -138,6 +138,7 @@ router.use(tokenMiddleware, protectAdmin);
 // Admin User Management routes
 router.get('/users', getAllUsers);           // Get all users with pagination
 router.get('/users/:id', getUserById);       // Get user by ID
+router.post('/users/create-with-unit', createUserWithUnit);  // Create user and assign unit in one call
 router.delete('/users/:id/rented-units/:unitId', removeUserRentedUnit);  // Remove a specific rented unit (MUST be before /rented-units route)
 router.put('/users/:id/rented-units/:unitId', updateUserRentedUnit);  // Update a specific rented unit (MUST be before /rented-units route)
 router.put('/users/:id/rented-units', updateUserRentedUnits);  // Update user's rented units (MUST be before /:id route)
