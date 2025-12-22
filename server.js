@@ -20,21 +20,18 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
-
-// Configure Helmet to work with CORS (after CORS middleware)
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginEmbedderPolicy: false,
-    contentSecurityPolicy: false, // Disable CSP to avoid conflicts
+    contentSecurityPolicy: false, 
   })
 );
 
-// CORS configuration - single unified settings
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:7000",
-  "http://localhost:5173", // Vite default port
+  "http://localhost:5173",
   "http://127.0.0.1:3000",
   "http://127.0.0.1:7000",
   "http://127.0.0.1:5173",
@@ -81,28 +78,27 @@ app.use(
       "Origin",
     ],
     exposedHeaders: ["Content-Range", "X-Content-Range"],
-    optionsSuccessStatus: 200, // Support legacy browsers
+    optionsSuccessStatus: 200, 
   })
 );
 app.use(morgan("dev"));
 app.use(cookieParser());
 
-// Stripe Webhook Route (MUST be before JSON body parser)
-// Webhooks need raw body for signature verification
+
 app.post(
   "/api/webhooks/stripe",
   express.raw({ type: "application/json" }),
   handleStripeWebhook
 );
 
-// Body parsers for other routes (must come after webhook route)
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded files statically
+
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// MongoDB Connection
+
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/storageup";
 const PORT = process.env.PORT || 5000;

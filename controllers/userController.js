@@ -1642,10 +1642,53 @@ export const getUserInvoicesById = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip = (page - 1) * limit;
 
-    // Build query with optional status filter
+    // Build query with optional filters
     const query = { customer_id: userId };
-    if (req.query.status) {
-      query.status = req.query.status.toLowerCase();
+    
+    // Filter by status if provided
+    if (req.query.status && req.query.status.trim() !== '') {
+      query.status = req.query.status.trim().toLowerCase();
+    }
+
+    // Filter by date
+    // Supports: date_from, date_to (for date range) or date (single date)
+    // Priority: date_from/date_to > date (if both provided, date_from/date_to takes precedence)
+    const hasDateRange = (req.query.date_from && req.query.date_from.trim() !== '') || 
+                         (req.query.date_to && req.query.date_to.trim() !== '');
+    
+    if (hasDateRange) {
+      // Date range filter (filters by issue_date)
+      if (req.query.date_from && req.query.date_from.trim() !== '') {
+        const fromDate = new Date(req.query.date_from.trim());
+        if (!isNaN(fromDate.getTime())) {
+          query.issue_date = query.issue_date || {};
+          query.issue_date.$gte = fromDate;
+        }
+      }
+
+      if (req.query.date_to && req.query.date_to.trim() !== '') {
+        const toDate = new Date(req.query.date_to.trim());
+        toDate.setHours(23, 59, 59, 999); // End of day
+        if (!isNaN(toDate.getTime())) {
+          query.issue_date = query.issue_date || {};
+          query.issue_date.$lte = toDate;
+        }
+      }
+    } else if (req.query.date && req.query.date.trim() !== '') {
+      // Single date filter (matches either issue_date or due_date)
+      const singleDate = new Date(req.query.date.trim());
+      if (!isNaN(singleDate.getTime())) {
+        const startOfDay = new Date(singleDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(singleDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        
+        // Match invoices where issue_date or due_date falls on this date
+        query.$or = [
+          { issue_date: { $gte: startOfDay, $lte: endOfDay } },
+          { due_date: { $gte: startOfDay, $lte: endOfDay } }
+        ];
+      }
     }
 
     // Get total count and invoices (after potentially creating defaults)
