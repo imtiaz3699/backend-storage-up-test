@@ -25,6 +25,7 @@ import {
   getUnits,
   getUnitById,
   updateUnit,
+  updateUnitStatus,
   deleteUnit,
   assignUnitToUser,
   releaseUnit,
@@ -158,6 +159,7 @@ router.post('/units/multiply', multiplyUnits); // Multiply/create multiple units
 router.get('/units/search', searchUnits);       // Search units by unit number (for dropdown)
 router.get('/units', getUnits);                // List units
 router.get('/units/:id', getUnitById);         // Get unit by ID
+router.put('/units/:id/status', updateUnitStatus);  // Update unit status (vacant/rented)
 router.put('/units/:id', updateUnit);          // Update unit
 router.delete('/units/:id', deleteUnit);       // Delete unit
 router.post('/units/:unitId/assign', assignUnitToUser);  // Assign/rent unit to user

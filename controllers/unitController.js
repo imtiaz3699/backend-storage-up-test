@@ -322,6 +322,79 @@ export const updateUnit = async (req, res) => {
   }
 };
 
+// Update only the status (unit_is) of a unit
+export const updateUnitStatus = async (req, res) => {
+  try {
+    const { status, customer_email } = req.body;
+
+    if (!status || typeof status !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: "status is required and must be a string",
+      });
+    }
+
+    const normalizedStatus = status.trim().toLowerCase();
+    const allowedStatuses = ['available', 'vacant', 'rented', 'reserved', 'repair', 'to_clean', 'locked', 'on_site', 'unavailable'];
+    if (!allowedStatuses.includes(normalizedStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `status must be one of: ${allowedStatuses.join(', ')}`,
+      });
+    }
+
+    const unit = await Unit.findById(req.params.id);
+    if (!unit) {
+      return res.status(404).json({
+        success: false,
+        message: "Unit not found",
+      });
+    }
+
+    // If setting to vacant/available/unavailable/to_clean/repair/locked/on_site/reserved/rented
+    // - Clear customer_email when status is clearly not occupied (vacant/available/unavailable/to_clean/repair)
+    // - Otherwise keep or update if provided
+    const clearEmailStatuses = ['vacant', 'available', 'unavailable', 'to_clean', 'repair'];
+    if (clearEmailStatuses.includes(normalizedStatus)) {
+      unit.customer_email = null;
+    } else if (customer_email && typeof customer_email === 'string' && customer_email.trim() !== '') {
+      unit.customer_email = customer_email.toLowerCase().trim();
+    }
+
+    // Update the status
+    unit.unit_is = normalizedStatus;
+    await unit.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Unit status updated successfully",
+      data: unit,
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid unit ID",
+      });
+    }
+
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Error updating unit status",
+      error: error.message,
+    });
+  }
+};
+
 export const deleteUnit = async (req, res) => {
   try {
     const unit = await Unit.findByIdAndDelete(req.params.id);

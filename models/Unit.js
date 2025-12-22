@@ -75,7 +75,7 @@ const unitSchema = new mongoose.Schema({
   },
   unit_is: {
     type: String,
-    enum: ['vacant', 'rented'],
+    enum: ['available', 'vacant', 'rented', 'reserved', 'repair', 'to_clean', 'locked', 'on_site', 'unavailable'],
     default: 'vacant'
   },
   customer_email: {
