@@ -22,8 +22,9 @@ const storage = multer.diskStorage({
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
-    // Generate unique filename: timestamp-userId-originalname
-    const userId = req.params.id || 'unknown';
+    // Generate unique filename: timestamp-originalname
+    // For create-with-unit, there's no userId yet, so we use a random string
+    const userId = req.params.id || req.body.email?.replace(/[^a-zA-Z0-9]/g, '_') || 'new';
     const timestamp = Date.now();
     const originalName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
     const filename = `${timestamp}-${userId}-${originalName}`;

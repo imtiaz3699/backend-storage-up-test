@@ -174,7 +174,23 @@ export const createUserWithUnit = async (req, res) => {
   }
 
   try {
-    const { name, email, phoneNumber, password, roles, unitId, billing_cycle, deposit_amount, start_date, end_date } = req.body;
+    const { 
+      name, 
+      email, 
+      phoneNumber, 
+      password, 
+      roles, 
+      unitId, 
+      billing_cycle, 
+      deposit_amount, 
+      start_date, 
+      end_date,
+      secondaryContactName,
+      secondaryPhoneNumber,
+      secondaryEmail,
+      language,
+      other
+    } = req.body;
 
     // Validate required fields
     if (!name || !email || !phoneNumber || !password) {
@@ -225,13 +241,27 @@ export const createUserWithUnit = async (req, res) => {
       });
     }
 
-    // Create new user
+    // Handle file uploads (id_document, contract_copy, additional_records)
+    const files = req.files || {};
+    const idDocumentFile = files.id_document && files.id_document[0] ? getFileUrl(files.id_document[0].filename) : "";
+    const contractCopyFile = files.contract_copy && files.contract_copy[0] ? getFileUrl(files.contract_copy[0].filename) : "";
+    const additionalRecordsFile = files.additional_records && files.additional_records[0] ? getFileUrl(files.additional_records[0].filename) : "";
+
+    // Create new user with all fields
     const user = new User({
       name,
       email,
       phoneNumber,
       password,
       roles: roles || ["user"],
+      secondaryContactName: secondaryContactName || "",
+      secondaryPhoneNumber: secondaryPhoneNumber || "",
+      secondaryEmail: secondaryEmail || "",
+      language: language || "",
+      other: other || "",
+      id_document: idDocumentFile,
+      contract_copy: contractCopyFile,
+      additional_records: additionalRecordsFile,
     });
 
     await user.save();
@@ -286,6 +316,14 @@ export const createUserWithUnit = async (req, res) => {
           email: updatedUser.email,
           phoneNumber: updatedUser.phoneNumber,
           roles: updatedUser.roles,
+          secondaryContactName: updatedUser.secondaryContactName,
+          secondaryPhoneNumber: updatedUser.secondaryPhoneNumber,
+          secondaryEmail: updatedUser.secondaryEmail,
+          language: updatedUser.language,
+          other: updatedUser.other,
+          id_document: updatedUser.id_document || null,
+          contract_copy: updatedUser.contract_copy || null,
+          additional_records: updatedUser.additional_records || null,
           rented_units: updatedUser.rented_units,
           createdAt: updatedUser.createdAt
         },
@@ -1695,6 +1733,142 @@ export const addDefaultInvoicesForUser = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error creating default invoices",
+      error: error.message,
+    });
+  }
+};
+
+// Get user billing information (Balance Due, Next Bill Date, Next Bill Amount)
+export const getUserBillingInfo = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Validate user ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId).populate('rented_units.unit_id');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // 1. Calculate Balance Due
+    // Get all unpaid invoices (pending + overdue status)
+    const unpaidInvoices = await Invoice.find({
+      customer_id: userId,
+      status: { $in: ['pending', 'overdue'] }
+    });
+
+    const balanceDue = unpaidInvoices.reduce((sum, invoice) => {
+      return sum + (invoice.amount || 0);
+    }, 0);
+
+    // 2. Calculate Next Bill Date and Next Bill Amount
+    // Get user's rented units to find billing cycle and monthly rates
+    const rentedUnits = user.rented_units || [];
+    
+    let nextBillDate = null;
+    let nextBillAmount = 0;
+
+    // Find the earliest billing cycle date from rented units
+    const now = new Date();
+    const billingDates = [];
+
+    for (const rentedUnit of rentedUnits) {
+      // Get monthly rate (from rented_units or populated unit_id)
+      const monthlyRate = rentedUnit.monthly_rate || 
+                         (rentedUnit.unit_id && rentedUnit.unit_id.monthly_rate) || 
+                         0;
+      
+      if (monthlyRate > 0) {
+        nextBillAmount += monthlyRate;
+
+        // Calculate next bill date based on start_date and billing_cycle
+        const startDate = rentedUnit.start_date;
+        if (startDate) {
+          const start = new Date(startDate);
+          
+          // Get billing cycle day (default to day of month from start_date)
+          // If billing_cycle is specified and contains a number, use that
+          let billingDay = start.getDate();
+          if (rentedUnit.billing_cycle) {
+            // Try to extract day from billing_cycle (e.g., "15th", "15", "monthly-15")
+            const dayMatch = rentedUnit.billing_cycle.match(/(\d{1,2})/);
+            if (dayMatch) {
+              billingDay = parseInt(dayMatch[1], 10);
+            }
+          }
+
+          // Calculate next billing date
+          let nextBill = new Date(now.getFullYear(), now.getMonth(), billingDay);
+          
+          // If the billing day has passed this month, move to next month
+          if (nextBill < now) {
+            nextBill = new Date(now.getFullYear(), now.getMonth() + 1, billingDay);
+          }
+
+          // Check if unit has end_date and if it's before next bill date
+          if (rentedUnit.end_date) {
+            const endDate = new Date(rentedUnit.end_date);
+            if (endDate < nextBill) {
+              // Unit ends before next bill date, skip it
+              continue;
+            }
+          }
+
+          billingDates.push(nextBill);
+        }
+      }
+    }
+
+    // Find the earliest next bill date
+    if (billingDates.length > 0) {
+      nextBillDate = new Date(Math.min(...billingDates.map(d => d.getTime())));
+    }
+
+    // Format next bill date as DD/MM/YYYY
+    const formatDate = (date) => {
+      if (!date) return null;
+      const d = new Date(date);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    };
+
+    res.status(200).json({
+      success: true,
+      message: "User billing information retrieved successfully",
+      data: {
+        user_id: user._id,
+        user_name: user.name,
+        user_email: user.email,
+        balance_due: parseFloat(balanceDue.toFixed(2)),
+        next_bill_date: formatDate(nextBillDate),
+        next_bill_amount: parseFloat(nextBillAmount.toFixed(2)),
+        details: {
+          unpaid_invoices_count: unpaidInvoices.length,
+          rented_units_count: rentedUnits.length,
+          breakdown: {
+            pending_invoices: unpaidInvoices.filter(inv => inv.status === 'pending').length,
+            overdue_invoices: unpaidInvoices.filter(inv => inv.status === 'overdue').length,
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user billing info:', error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching user billing information",
       error: error.message,
     });
   }

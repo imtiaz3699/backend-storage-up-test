@@ -120,18 +120,48 @@ export const getUnits = async (req, res) => {
       filter.customer_email = customerEmailFilter;
     }
 
+    // First, fix any status inconsistencies in the database before fetching
+    // If any units have customer_email but status is not 'rented', update them
+    const updateResult = await Unit.updateMany(
+      { 
+        customer_email: { $exists: true, $ne: null, $ne: '' },
+        unit_is: { $ne: 'rented' }
+      },
+      { 
+        $set: { unit_is: 'rented' }
+      }
+    );
+    
+    if (updateResult.modifiedCount > 0) {
+      console.log(`[getUnits] Auto-updated ${updateResult.modifiedCount} unit(s) status to 'rented' (had customer_email but wrong status)`);
+    }
+
     const [total, units] = await Promise.all([
       Unit.countDocuments(filter),
       Unit.find(filter).skip(skip).limit(limit).sort(sort),
     ]);
 
     // For rented units, fetch customer information
+    // Note: After the bulk update above, all units with customer_email should have status 'rented'
     const unitsWithCustomerInfo = await Promise.all(
       units.map(async (unit) => {
+        // Reload unit to get latest status after bulk update (if needed)
         const unitObj = unit.toObject();
         
+        // Final check: ensure unit with customer_email has status 'rented' (should already be fixed by bulk update)
+        if (unit.customer_email && unit.customer_email.trim() !== '' && unit.unit_is !== 'rented') {
+          // This shouldn't happen after bulk update, but handle it just in case
+          unit.unit_is = 'rented';
+          await unit.save();
+          unitObj.unit_is = 'rented';
+          console.log(`[getUnits] Per-unit fix: Updated unit ${unit._id} (${unit.unit_number}) status to 'rented' (has customer_email: ${unit.customer_email})`);
+        }
+        
+        // Use unitObj.unit_is for consistency (it reflects any updates we made)
+        const unitStatus = unitObj.unit_is || unit.unit_is;
+        
         // If unit is rented and has customer_email, fetch customer details
-        if (unit.unit_is === 'rented' && unit.customer_email) {
+        if (unitStatus === 'rented' && unit.customer_email) {
           try {
             const customer = await User.findOne({ 
               email: unit.customer_email.toLowerCase() 
@@ -282,7 +312,18 @@ export const updateUnit = async (req, res) => {
       }
     }
 
+    // Check if customer_email is being set in the update
+    const hasCustomerEmailInUpdate = req.body.customer_email && req.body.customer_email.trim() !== '';
+    
     Object.assign(unit, req.body);
+    
+    // Auto-update status: if unit has customer_email (either from update or existing), status should be 'rented'
+    // This ensures consistency when customer_email is assigned
+    if (unit.customer_email && unit.customer_email.trim() !== '' && unit.unit_is !== 'rented') {
+      unit.unit_is = 'rented';
+      console.log(`[updateUnit] Auto-updated unit ${unit._id} status to 'rented' (has customer_email: ${unit.customer_email})`);
+    }
+    
     await unit.save();
 
     res.status(200).json({
@@ -457,7 +498,7 @@ export const assignUnitToUser = async (req, res) => {
       });
     }
 
-    // Assign unit to user
+    // Assign unit to user - automatically set status to 'rented'
     unit.customer_email = customer_email.toLowerCase().trim();
     unit.unit_is = 'rented';
     
