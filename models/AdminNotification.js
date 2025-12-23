@@ -68,3 +68,5 @@ const AdminNotification = mongoose.model('AdminNotification', adminNotificationS
 export default AdminNotification;
 
 
+
+

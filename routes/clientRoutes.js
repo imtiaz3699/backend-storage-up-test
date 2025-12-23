@@ -19,7 +19,7 @@ import {
   getMyPayments,
   getPaymentsByInvoiceId
 } from '../controllers/paymentRecordController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect, tokenMiddleware } from '../middleware/authMiddleware.js';
 import { getTransactionsByUserId } from '../controllers/transactionController.js';
 import {
   getFacilityMap,
@@ -61,10 +61,10 @@ router.get('/transactions', protect, async (req, res) => {
   return getTransactionsByUserId(modifiedReq, res);
 }); // Get current user's transactions
 
-// Facility Map routes (singleton - only one map exists in the app)
-router.get('/facility-map', protect, getFacilityMap);                              // Get the facility map
-router.post('/facility-map', protect, saveFacilityMap);                            // Save/update facility map (upsert)
-router.put('/facility-map/unit', protect, updateUnitLayout);                       // Update single unit position/layout
-router.delete('/facility-map', protect, deleteFacilityMap);                        // Delete facility map
+// Facility Map routes (accessible to both clients and admins - singleton, only one map exists in the app)
+router.get('/facility-map', tokenMiddleware, getFacilityMap);                              // Get the facility map
+router.post('/facility-map', tokenMiddleware, saveFacilityMap);                            // Save/update facility map (upsert)
+router.put('/facility-map/unit', tokenMiddleware, updateUnitLayout);                       // Update single unit position/layout
+router.delete('/facility-map', tokenMiddleware, deleteFacilityMap);                        // Delete facility map
 
 export default router;

@@ -565,8 +565,57 @@ export const getUserById = async (req, res) => {
       ];
     }
 
+    // Get latest pending invoice for this user
+    let latestPendingInvoice = null;
+    try {
+      const invoice = await Invoice.findOne({
+        customer_id: user._id,
+        status: 'pending'
+      }).sort({ createdAt: -1 });
+
+      if (invoice) {
+        // Get payment link if available
+        const stripe = getStripe();
+        let paymentLink = null;
+        
+        if (invoice.stripe_checkout_session_id) {
+          try {
+            const session = await stripe.checkout.sessions.retrieve(
+              invoice.stripe_checkout_session_id
+            );
+            if (session.status === 'open') {
+              paymentLink = session.url;
+            }
+          } catch (error) {
+            console.log(`Could not retrieve Stripe session for invoice ${invoice._id}:`, error.message);
+          }
+        }
+
+        latestPendingInvoice = {
+          _id: invoice._id,
+          invoice_id: invoice.invoice_id,
+          invoice_title: invoice.invoice_title,
+          customer_name: invoice.customer_name,
+          customer_email: invoice.customer_email,
+          unit_number: invoice.unit_number,
+          amount: invoice.amount,
+          issue_date: invoice.issue_date,
+          due_date: invoice.due_date,
+          status: invoice.status,
+          payment_link: paymentLink,
+          stripe_checkout_session_id: invoice.stripe_checkout_session_id,
+          createdAt: invoice.createdAt,
+          updatedAt: invoice.updatedAt
+        };
+      }
+    } catch (error) {
+      console.error(`Error fetching latest pending invoice for user ${userId}:`, error.message);
+      // Don't fail the entire request if invoice fetch fails
+    }
+
     const userObject = user.toJSON();
     userObject.transactions = transactions || [];
+    userObject.invoices = latestPendingInvoice ? [latestPendingInvoice] : []; // Add invoices key with latest pending invoice
 
     // Ensure subscriptions is at least an empty array
     if (!Array.isArray(userObject.subscriptions)) {
@@ -1382,6 +1431,165 @@ export const updateUserCharges = async (req, res) => {
       });
     }
 
+    // NEW: Check if there's a latest pending invoice and add charge amount to it
+    let updatedInvoice = null;
+    let newPaymentLink = null;
+    let oldInvoiceAmount = 0;
+    let createdTransaction = null;
+    
+    if (processedCharge.charge_amount && processedCharge.charge_amount > 0) {
+      // Find or create the latest pending invoice for this user
+      let latestInvoice = await Invoice.findOne({
+        customer_id: user._id,
+        status: 'pending'
+      }).sort({ createdAt: -1 });
+
+      // Create invoice if none exists
+      if (!latestInvoice) {
+        const unitNumbers = user.rented_units?.map(u => u.unit_number).filter(Boolean) || [];
+        latestInvoice = await Invoice.create({
+          customer_id: user._id,
+          customer_name: user.name,
+          customer_email: user.email,
+          unit_number: unitNumbers.length > 0 ? unitNumbers : ['N/A'],
+          amount: 0,
+          issue_date: new Date(),
+          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+          status: 'pending',
+          invoice_title: 'Additional Charges'
+        });
+      }
+
+      // Store old amount for response
+      oldInvoiceAmount = latestInvoice.amount;
+      
+      // CREATE TRANSACTION for the charge (transaction-based approach)
+      createdTransaction = await Transaction.create({
+        transaction_type: 'charge',
+        amount: processedCharge.charge_amount,
+        invoice_id: latestInvoice._id,
+        customer_id: user._id,
+        status: 'pending',
+        charge_details: {
+          description: processedCharge.description || '',
+          date: processedCharge.date || null,
+          from: processedCharge.from || null,
+          to: processedCharge.to || null,
+          analysis_code: processedCharge.analysis_code || null
+        }
+      });
+
+      // Link transaction to user
+      if (!user.transactions) {
+        user.transactions = [];
+      }
+      if (!user.transactions.includes(createdTransaction._id)) {
+        user.transactions.push(createdTransaction._id);
+        await user.save();
+      }
+
+      // Recalculate invoice total from ALL transactions (including reversals)
+      const allTransactions = await Transaction.find({
+        invoice_id: latestInvoice._id
+      });
+
+      const invoiceTotal = allTransactions.reduce((sum, t) => {
+        return sum + (t.amount || 0); // Reversals are negative, so this works correctly
+      }, 0);
+      
+      // Update invoice amount (ensure it doesn't go below 0)
+      latestInvoice.amount = Math.max(0, invoiceTotal);
+      await latestInvoice.save();
+      updatedInvoice = latestInvoice;
+
+        // Update Stripe checkout session (expire old and create new)
+        const stripe = getStripe();
+        
+        // Expire the old checkout session if it exists and is still open
+        if (latestInvoice.stripe_checkout_session_id) {
+          try {
+            const existingSession = await stripe.checkout.sessions.retrieve(
+              latestInvoice.stripe_checkout_session_id
+            );
+            
+            if (existingSession.status === 'open') {
+              // Expire the old session
+              await stripe.checkout.sessions.expire(latestInvoice.stripe_checkout_session_id);
+              console.log(`✅ Expired old Stripe checkout session: ${latestInvoice.stripe_checkout_session_id}`);
+            }
+          } catch (error) {
+            console.log(`⚠️ Could not expire old session (may already be expired): ${error.message}`);
+          }
+        }
+
+        // Create new Stripe checkout session with updated amount
+        try {
+          let customerEmail = latestInvoice.customer_email;
+          let customerName = latestInvoice.customer_name;
+          let stripeCustomerId = null;
+
+          // Get user's Stripe customer ID if available
+          if (user.stripe_customer_id) {
+            stripeCustomerId = user.stripe_customer_id;
+          }
+          
+          if (!customerEmail && user.email) {
+            customerEmail = user.email.toLowerCase().trim();
+          }
+          if (!customerName && user.name) {
+            customerName = user.name;
+          }
+
+          if (customerEmail) {
+            const amountInCents = Math.round(latestInvoice.amount * 100);
+            if (amountInCents >= 50) { // Stripe minimum is $0.50
+              let baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+              baseUrl = baseUrl.replace(/\/+$/, '');
+
+              const session = await stripe.checkout.sessions.create({
+                payment_method_types: ['card'],
+                line_items: [
+                  {
+                    price_data: {
+                      currency: 'usd',
+                      product_data: {
+                        name: latestInvoice.invoice_title || `Invoice ${latestInvoice.invoice_id}`,
+                        description: `Payment for ${latestInvoice.invoice_title || `Invoice ${latestInvoice.invoice_id}`}. Units: ${latestInvoice.unit_number?.join(', ') || 'N/A'}`,
+                      },
+                      unit_amount: amountInCents,
+                    },
+                    quantity: 1,
+                  },
+                ],
+                mode: 'payment',
+                success_url: `${baseUrl}/invoices/${latestInvoice._id}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${baseUrl}/invoices/${latestInvoice._id}/payment/cancel`,
+                ...(stripeCustomerId ? { customer: stripeCustomerId } : { customer_email: customerEmail }),
+                metadata: {
+                  invoice_id: latestInvoice._id.toString(),
+                  invoice_number: latestInvoice.invoice_id,
+                  customer_id: user._id.toString(),
+                },
+              });
+
+              latestInvoice.stripe_checkout_session_id = session.id;
+              latestInvoice.stripe_payment_status = 'pending';
+              await latestInvoice.save();
+              
+              newPaymentLink = session.url;
+              console.log(`✅ Created new Stripe checkout session with updated amount: ${session.id}`);
+            } else {
+              console.log(`⚠️ Updated invoice amount (${latestInvoice.amount}) is below Stripe minimum ($0.50), not creating checkout session`);
+            }
+          } else {
+            console.log(`⚠️ No customer email found, cannot create Stripe checkout session`);
+          }
+        } catch (error) {
+          console.error(`❌ Error creating new Stripe checkout session: ${error.message}`);
+          // Continue even if Stripe session creation fails
+        }
+    }
+
     // Update the user's charges with the new object
     user.charges = processedCharge;
     await user.save();
@@ -1389,10 +1597,28 @@ export const updateUserCharges = async (req, res) => {
     // Populate analysis_code for response
     await user.populate('charges.analysis_code');
 
+    // Prepare response
+    const responseData = {
+      user,
+      transaction_created: createdTransaction ? {
+        transaction_id: createdTransaction.transaction_id,
+        amount: createdTransaction.amount,
+        type: createdTransaction.transaction_type
+      } : null,
+      invoice_updated: updatedInvoice ? {
+        invoice_id: updatedInvoice.invoice_id,
+        old_amount: oldInvoiceAmount,
+        new_amount: updatedInvoice.amount,
+        payment_link: newPaymentLink
+      } : null
+    };
+
     res.status(200).json({
       success: true,
-      message: "User charges updated successfully",
-      data: user,
+      message: updatedInvoice 
+        ? `User charges updated successfully and added to latest invoice. Invoice amount updated from ${oldInvoiceAmount} to ${updatedInvoice.amount}`
+        : "User charges updated successfully",
+      data: responseData,
     });
   } catch (error) {
     if (error.name === "CastError") {
@@ -1413,6 +1639,305 @@ export const updateUserCharges = async (req, res) => {
       success: false,
       message: "Error updating user charges",
       error: error.message,
+    });
+  }
+};
+
+// Bill next charges (rent for next period + one-time deposit/move-in if not yet billed)
+export const billNextCharges = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const user = await User.findById(userId).populate('rented_units.unit_id');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (!Array.isArray(user.rented_units) || user.rented_units.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "User has no rented units to bill",
+      });
+    }
+
+    // Flags and optional period/amount overrides
+    let {
+      billRent = true,
+      billDeposit = true,
+      billMoveIn = true,
+      rent_period_from = null,
+      rent_period_to = null,
+      rent_amount = null,
+      // New client-facing keys (preferred)
+      bill_rent_for_plan,
+      create_transactions
+    } = req.body || {};
+
+    // Normalize boolean-like inputs (allow strings)
+    const normalizeBool = (val, fallback = true) => {
+      if (typeof val === 'boolean') return val;
+      if (typeof val === 'string') {
+        const lower = val.toLowerCase();
+        if (lower === 'true') return true;
+        if (lower === 'false') return false;
+      }
+      return fallback;
+    };
+
+    // If new keys provided, map them; otherwise fall back to legacy keys
+    if (bill_rent_for_plan !== undefined || create_transactions !== undefined) {
+      billRent = normalizeBool(bill_rent_for_plan, true);
+      const createTx = normalizeBool(create_transactions, true);
+      billDeposit = createTx;
+      billMoveIn = createTx;
+    } else {
+      billRent = normalizeBool(billRent, true);
+      billDeposit = normalizeBool(billDeposit, true);
+      billMoveIn = normalizeBool(billMoveIn, true);
+    }
+
+    if (!billRent && !billDeposit && !billMoveIn) {
+      return res.status(400).json({
+        success: false,
+        message: "Nothing to bill. Enable at least one of billRent, billDeposit, billMoveIn."
+      });
+    }
+
+    // Determine billing period: use provided range or default to next calendar month
+    const today = new Date();
+    let periodStart = rent_period_from ? new Date(rent_period_from) : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+    let periodEnd = rent_period_to ? new Date(rent_period_to) : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 2, 0, 23, 59, 59, 999));
+
+    if (isNaN(periodStart.getTime()) || isNaN(periodEnd.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid rent_period_from or rent_period_to date."
+      });
+    }
+
+    if (periodStart > periodEnd) {
+      return res.status(400).json({
+        success: false,
+        message: "rent_period_from must be before rent_period_to."
+      });
+    }
+
+    // Find or create a pending invoice
+    let invoice = await Invoice.findOne({
+      customer_id: user._id,
+      status: 'pending'
+    }).sort({ createdAt: -1 });
+
+    const unitNumbers = user.rented_units.map(ru => ru.unit_number).filter(Boolean);
+
+    if (!invoice) {
+      invoice = await Invoice.create({
+        customer_id: user._id,
+        customer_name: user.name,
+        customer_email: user.email,
+        unit_number: unitNumbers.length > 0 ? unitNumbers : ['N/A'],
+        amount: 0,
+        issue_date: new Date(),
+        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        status: 'pending',
+        invoice_title: 'Next Billing Charges'
+      });
+    }
+
+    const createdTransactions = [];
+
+    for (const rentedUnit of user.rented_units) {
+      const unit = rentedUnit.unit_id || (await Unit.findById(rentedUnit.unit_id));
+      const unitId = unit?._id;
+      const baseRate = (unit?.monthly_rate ?? rentedUnit.monthly_rate ?? 0) || 0;
+      const monthlyRate = rent_amount !== null && rent_amount !== undefined && !isNaN(Number(rent_amount))
+        ? Number(rent_amount)
+        : baseRate;
+      const billingCycle = rentedUnit.billing_cycle || 'monthly';
+
+      // Rent transaction for next period (avoid duplicates for same unit & period)
+      if (billRent && unitId && monthlyRate > 0) {
+        const existingRent = await Transaction.findOne({
+          customer_id: user._id,
+          transaction_type: 'rent',
+          'rent_period.unit_id': unitId,
+          'rent_period.from': periodStart,
+          'rent_period.to': periodEnd
+        });
+
+        if (!existingRent) {
+          const rentTx = await Transaction.create({
+            transaction_type: 'rent',
+            amount: monthlyRate,
+            invoice_id: invoice._id,
+            customer_id: user._id,
+            status: 'pending',
+            rent_period: {
+              from: periodStart,
+              to: periodEnd,
+              amount: monthlyRate,
+              billing_cycle: billingCycle,
+              prorated: false,
+              unit_id: unitId
+            }
+          });
+          createdTransactions.push(rentTx);
+        }
+      }
+
+      // Deposit transaction (only once per unit)
+      if (billDeposit && unitId && rentedUnit.deposit_amount && rentedUnit.deposit_amount > 0) {
+        const existingDeposit = await Transaction.findOne({
+          customer_id: user._id,
+          transaction_type: 'deposit',
+          'rent_period.unit_id': unitId
+        });
+
+        if (!existingDeposit) {
+          const depositTx = await Transaction.create({
+            transaction_type: 'deposit',
+            amount: rentedUnit.deposit_amount,
+            invoice_id: invoice._id,
+            customer_id: user._id,
+            status: 'pending',
+            rent_period: {
+              from: rentedUnit.start_date ? new Date(rentedUnit.start_date) : nextPeriodStart,
+              to: rentedUnit.start_date ? new Date(rentedUnit.start_date) : nextPeriodStart,
+              amount: rentedUnit.deposit_amount,
+              billing_cycle: billingCycle,
+              prorated: false,
+              unit_id: unitId
+            }
+          });
+          createdTransactions.push(depositTx);
+        }
+      }
+
+      // Move-in charge (only once per unit)
+      if (billMoveIn && unitId && monthlyRate > 0) {
+        const existingMoveIn = await Transaction.findOne({
+          customer_id: user._id,
+          transaction_type: 'move_in',
+          'rent_period.unit_id': unitId
+        });
+
+        if (!existingMoveIn) {
+          const moveInDate = rentedUnit.start_date ? new Date(rentedUnit.start_date) : today;
+          const moveInTx = await Transaction.create({
+            transaction_type: 'move_in',
+            amount: monthlyRate,
+            invoice_id: invoice._id,
+            customer_id: user._id,
+            status: 'pending',
+            rent_period: {
+              from: moveInDate,
+              to: moveInDate,
+              amount: monthlyRate,
+              billing_cycle: billingCycle,
+              prorated: false,
+              unit_id: unitId
+            }
+          });
+          createdTransactions.push(moveInTx);
+        }
+      }
+    }
+
+    // Attach transactions to user record
+    if (createdTransactions.length > 0) {
+      if (!Array.isArray(user.transactions)) {
+        user.transactions = [];
+      }
+      for (const tx of createdTransactions) {
+        if (!user.transactions.find(id => id.toString() === tx._id.toString())) {
+          user.transactions.push(tx._id);
+        }
+      }
+      await user.save();
+    }
+
+    // Recalculate invoice total from all transactions linked to the invoice
+    const allInvoiceTransactions = await Transaction.find({ invoice_id: invoice._id });
+    const invoiceTotal = allInvoiceTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+    invoice.amount = Math.max(0, invoiceTotal);
+    invoice.unit_number = unitNumbers.length > 0 ? unitNumbers : invoice.unit_number;
+    await invoice.save();
+
+    // Refresh Stripe checkout session to reflect new amount
+    let paymentLink = null;
+    const stripe = getStripe();
+
+    if (invoice.stripe_checkout_session_id) {
+      try {
+        const existingSession = await stripe.checkout.sessions.retrieve(invoice.stripe_checkout_session_id);
+        if (existingSession.status === 'open') {
+          await stripe.checkout.sessions.expire(invoice.stripe_checkout_session_id);
+          console.log(`✅ Expired old Stripe checkout session: ${invoice.stripe_checkout_session_id}`);
+        }
+      } catch (error) {
+        console.log(`⚠️ Could not expire old session (may already be expired): ${error.message}`);
+      }
+    }
+
+    try {
+      const amountInCents = Math.round(invoice.amount * 100);
+      if (amountInCents >= 50 && user.email) { // Stripe minimum $0.50 and require email
+        let baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+        baseUrl = baseUrl.replace(/\/+$/, '');
+
+        const stripeSession = await stripe.checkout.sessions.create({
+          payment_method_types: ['card'],
+          line_items: [
+            {
+              price_data: {
+                currency: 'usd',
+                product_data: {
+                  name: invoice.invoice_title || `Invoice ${invoice.invoice_id}`,
+                  description: `Payment for ${invoice.invoice_title || `Invoice ${invoice.invoice_id}`}. Units: ${invoice.unit_number?.join(', ') || 'N/A'}`,
+                },
+                unit_amount: amountInCents,
+              },
+              quantity: 1,
+            },
+          ],
+          mode: 'payment',
+          success_url: `${baseUrl}/invoices/${invoice._id}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${baseUrl}/invoices/${invoice._id}/payment/cancel`,
+          ...(user.stripe_customer_id ? { customer: user.stripe_customer_id } : { customer_email: user.email.toLowerCase().trim() }),
+          metadata: {
+            invoice_id: invoice._id.toString(),
+            invoice_number: invoice.invoice_id,
+            customer_id: user._id.toString(),
+          },
+        });
+
+        invoice.stripe_checkout_session_id = stripeSession.id;
+        invoice.stripe_payment_status = 'pending';
+        await invoice.save();
+        paymentLink = stripeSession.url;
+      }
+    } catch (error) {
+      console.error(`❌ Error creating Stripe checkout session for next charges: ${error.message}`);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Next charges billed successfully",
+      data: {
+        invoice,
+        transactions_created: createdTransactions,
+        payment_link: paymentLink
+      }
+    });
+  } catch (error) {
+    console.error(`Error billing next charges for user ${req.params.id}:`, error);
+    res.status(500).json({
+      success: false,
+      message: "Error billing next charges",
+      error: error.message
     });
   }
 };
@@ -1456,6 +1981,327 @@ export const undoUserCharges = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error undoing user charges",
+      error: error.message,
+    });
+  }
+};
+
+// Undo last charges - removes the last charge amount from the latest invoice
+export const undoLastCharges = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Check if user has charges
+    if (!user.charges || user.charges === null || !user.charges.charge_amount || user.charges.charge_amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No charges to undo. User has no charge amount to reverse.",
+      });
+    }
+
+    const chargeAmountToRemove = user.charges.charge_amount;
+
+    // Find the latest pending invoice for this user
+    const latestInvoice = await Invoice.findOne({
+      customer_id: user._id,
+      status: 'pending'
+    }).sort({ createdAt: -1 });
+
+    if (!latestInvoice) {
+      return res.status(404).json({
+        success: false,
+        message: "No pending invoice found to undo charges from.",
+      });
+    }
+
+    // Find the LATEST transaction matching this charge amount (transaction-based approach)
+    const latestTransaction = await Transaction.findOne({
+      invoice_id: latestInvoice._id,
+      customer_id: user._id,
+      amount: chargeAmountToRemove,
+      transaction_type: { $in: ['rent', 'deposit', 'move_in', 'charge'] },
+      status: 'pending' // Only undo pending transactions
+    }).sort({ createdAt: -1 });
+
+    if (!latestTransaction) {
+      return res.status(404).json({
+        success: false,
+        message: `No matching transaction found to undo. Looking for amount: ${chargeAmountToRemove}`,
+      });
+    }
+
+    // Store old amount for response
+    const oldInvoiceAmount = latestInvoice.amount;
+
+    // CREATE REVERSAL TRANSACTION (transaction-based approach)
+    const reversalTransaction = await Transaction.create({
+      transaction_type: 'reversal',
+      amount: -chargeAmountToRemove, // Negative amount
+      invoice_id: latestInvoice._id,
+      customer_id: user._id,
+      reversed_transaction_id: latestTransaction._id,
+      reversal_reason: req.body.reason || 'Undo last charges',
+      status: 'pending'
+    });
+
+    // Link reversal transaction to user
+    if (!user.transactions) {
+      user.transactions = [];
+    }
+    if (!user.transactions.includes(reversalTransaction._id)) {
+      user.transactions.push(reversalTransaction._id);
+      await user.save();
+    }
+
+    // Recalculate invoice total from ALL transactions (including the new reversal)
+    const allTransactions = await Transaction.find({
+      invoice_id: latestInvoice._id
+    });
+
+    const newTotal = allTransactions.reduce((sum, t) => {
+      return sum + (t.amount || 0); // Reversals are negative, so this correctly reduces the total
+    }, 0);
+
+    // Ensure amount doesn't go below 0
+    latestInvoice.amount = Math.max(0, newTotal);
+    await latestInvoice.save();
+
+    // Update Stripe checkout session (expire old and create new)
+    const stripe = getStripe();
+    let newPaymentLink = null;
+
+    // Expire the old checkout session if it exists and is still open
+    if (latestInvoice.stripe_checkout_session_id) {
+      try {
+        const existingSession = await stripe.checkout.sessions.retrieve(
+          latestInvoice.stripe_checkout_session_id
+        );
+        
+        if (existingSession.status === 'open') {
+          // Expire the old session
+          await stripe.checkout.sessions.expire(latestInvoice.stripe_checkout_session_id);
+          console.log(`✅ Expired old Stripe checkout session: ${latestInvoice.stripe_checkout_session_id}`);
+        }
+      } catch (error) {
+        console.log(`⚠️ Could not expire old session (may already be expired): ${error.message}`);
+      }
+    }
+
+    // Create new Stripe checkout session with updated amount (if amount > 0)
+    if (latestInvoice.amount > 0) {
+      try {
+        let customerEmail = latestInvoice.customer_email;
+        let customerName = latestInvoice.customer_name;
+        let stripeCustomerId = null;
+
+        // Get user's Stripe customer ID if available
+        if (user.stripe_customer_id) {
+          stripeCustomerId = user.stripe_customer_id;
+        }
+        
+        if (!customerEmail && user.email) {
+          customerEmail = user.email.toLowerCase().trim();
+        }
+        if (!customerName && user.name) {
+          customerName = user.name;
+        }
+
+        if (customerEmail) {
+          const amountInCents = Math.round(latestInvoice.amount * 100);
+          if (amountInCents >= 50) { // Stripe minimum is $0.50
+            let baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+            baseUrl = baseUrl.replace(/\/+$/, '');
+
+            const session = await stripe.checkout.sessions.create({
+              payment_method_types: ['card'],
+              line_items: [
+                {
+                  price_data: {
+                    currency: 'usd',
+                    product_data: {
+                      name: latestInvoice.invoice_title || `Invoice ${latestInvoice.invoice_id}`,
+                      description: `Payment for ${latestInvoice.invoice_title || `Invoice ${latestInvoice.invoice_id}`}. Units: ${latestInvoice.unit_number?.join(', ') || 'N/A'}`,
+                    },
+                    unit_amount: amountInCents,
+                  },
+                  quantity: 1,
+                },
+              ],
+              mode: 'payment',
+              success_url: `${baseUrl}/invoices/${latestInvoice._id}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+              cancel_url: `${baseUrl}/invoices/${latestInvoice._id}/payment/cancel`,
+              ...(stripeCustomerId ? { customer: stripeCustomerId } : { customer_email: customerEmail }),
+              metadata: {
+                invoice_id: latestInvoice._id.toString(),
+                invoice_number: latestInvoice.invoice_id,
+                customer_id: user._id.toString(),
+              },
+            });
+
+            latestInvoice.stripe_checkout_session_id = session.id;
+            latestInvoice.stripe_payment_status = 'pending';
+            await latestInvoice.save();
+            
+            newPaymentLink = session.url;
+            console.log(`✅ Created new Stripe checkout session with updated amount: ${session.id}`);
+          } else {
+            // If amount is below Stripe minimum, clear the session
+            latestInvoice.stripe_checkout_session_id = null;
+            latestInvoice.stripe_payment_status = null;
+            await latestInvoice.save();
+            console.log(`⚠️ Updated invoice amount (${latestInvoice.amount}) is below Stripe minimum ($0.50), cleared checkout session`);
+          }
+        } else {
+          console.log(`⚠️ No customer email found, cannot create Stripe checkout session`);
+        }
+      } catch (error) {
+        console.error(`❌ Error creating new Stripe checkout session: ${error.message}`);
+        // Continue even if Stripe session creation fails
+      }
+    } else {
+      // If invoice amount is 0, clear the Stripe session
+      latestInvoice.stripe_checkout_session_id = null;
+      latestInvoice.stripe_payment_status = null;
+      await latestInvoice.save();
+      console.log(`ℹ️ Invoice amount is now 0, cleared Stripe checkout session`);
+    }
+
+    // Clear the user's charges
+    user.charges = null;
+    await user.save();
+
+    // Prepare response
+    const responseData = {
+      user,
+      reversal_transaction: {
+        transaction_id: reversalTransaction.transaction_id,
+        amount: reversalTransaction.amount,
+        reversed_transaction_id: latestTransaction.transaction_id,
+        reason: reversalTransaction.reversal_reason
+      },
+      invoice_updated: {
+        invoice_id: latestInvoice.invoice_id,
+        old_amount: oldInvoiceAmount,
+        new_amount: latestInvoice.amount,
+        amount_removed: chargeAmountToRemove,
+        payment_link: newPaymentLink
+      }
+    };
+
+    res.status(200).json({
+      success: true,
+      message: `Last charges undone successfully. Removed ${chargeAmountToRemove} from invoice. Invoice amount updated from ${oldInvoiceAmount} to ${latestInvoice.amount}`,
+      data: responseData,
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error undoing last charges",
+      error: error.message,
+    });
+  }
+};
+
+// Get all reversal transactions for a user
+export const getReversalTransactions = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const currentUser = req.user;
+    const userRoles = currentUser?.roles || [];
+    const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+    const isViewingSelf = userId === currentUser._id.toString();
+
+    // Authorization check: Users can only view their own reversals, admins can view anyone's
+    if (!isViewingSelf && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only view your own reversal transactions. Administrators can view any user's reversals.",
+        code: "AUTH_FORBIDDEN"
+      });
+    }
+
+    // Validate user ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Get all reversal transactions for this user
+    const reversals = await Transaction.find({
+      customer_id: userId,
+      transaction_type: 'reversal'
+    })
+    .populate('reversed_transaction_id', 'transaction_id amount transaction_type charge_details rent_period createdAt')
+    .populate('invoice_id', 'invoice_id invoice_title amount status')
+    .sort({ createdAt: -1 }); // Newest first
+
+    // Format response
+    const formattedReversals = reversals.map(rev => ({
+      reversal_id: rev._id,
+      transaction_id: rev.transaction_id,
+      reversed_transaction: rev.reversed_transaction_id ? {
+        id: rev.reversed_transaction_id._id,
+        transaction_id: rev.reversed_transaction_id.transaction_id,
+        amount: rev.reversed_transaction_id.amount,
+        type: rev.reversed_transaction_id.transaction_type,
+        charge_details: rev.reversed_transaction_id.charge_details,
+        rent_period: rev.reversed_transaction_id.rent_period,
+        created_at: rev.reversed_transaction_id.createdAt
+      } : null,
+      amount_reversed: Math.abs(rev.amount), // Show as positive for clarity
+      reason: rev.reversal_reason,
+      reversal_date: rev.createdAt,
+      invoice: rev.invoice_id ? {
+        id: rev.invoice_id._id,
+        invoice_id: rev.invoice_id.invoice_id,
+        invoice_title: rev.invoice_id.invoice_title,
+        amount: rev.invoice_id.amount,
+        status: rev.invoice_id.status
+      } : null,
+      status: rev.status,
+      created_at: rev.createdAt
+    }));
+
+    res.status(200).json({
+      success: true,
+      count: formattedReversals.length,
+      message: "Reversal transactions retrieved successfully",
+      data: formattedReversals,
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error retrieving reversal transactions",
       error: error.message,
     });
   }

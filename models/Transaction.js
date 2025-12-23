@@ -43,6 +43,62 @@ const actualMoveOutNoticeSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+// Schema for rent period tracking
+const rentPeriodSchema = new mongoose.Schema({
+  from: {
+    type: Date,
+    default: null
+  },
+  to: {
+    type: Date,
+    default: null
+  },
+  amount: {
+    type: Number,
+    default: 0
+  },
+  billing_cycle: {
+    type: String,
+    trim: true,
+    default: 'monthly'
+  },
+  prorated: {
+    type: Boolean,
+    default: false
+  },
+  unit_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Unit',
+    default: null
+  }
+}, { _id: false });
+
+// Schema for charge details
+const chargeDetailsSchema = new mongoose.Schema({
+  description: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  date: {
+    type: Date,
+    default: null
+  },
+  from: {
+    type: Date,
+    default: null
+  },
+  to: {
+    type: Date,
+    default: null
+  },
+  analysis_code: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AnalysisCode',
+    default: null
+  }
+}, { _id: false });
+
 const transactionSchema = new mongoose.Schema(
   {
     transaction_id: {
@@ -78,12 +134,39 @@ const transactionSchema = new mongoose.Schema(
     amount: {
       type: Number,
       default: null,
-      min: 0
+      // Allow negative amounts for reversals
     },
     transaction_type: {
       type: String,
-      enum: ['payment', 'move_out_notice'],
+      enum: ['payment', 'move_out_notice', 'rent', 'deposit', 'move_in', 'charge', 'reversal'],
       default: 'move_out_notice'
+    },
+    // Rent period tracking (for rent transactions)
+    rent_period: {
+      type: rentPeriodSchema,
+      default: null
+    },
+    // Charge details (for charge transactions)
+    charge_details: {
+      type: chargeDetailsSchema,
+      default: null
+    },
+    // Reversal tracking (for reversal transactions)
+    reversed_transaction_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Transaction',
+      default: null
+    },
+    reversal_reason: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    // Customer reference for easier querying
+    customer_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
     }
   },
   {

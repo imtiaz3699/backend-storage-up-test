@@ -511,3 +511,5 @@ export const markAllNotificationsAsRead = async () => {
 5. Customer should receive notification immediately!
 
 
+
+

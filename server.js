@@ -53,12 +53,10 @@ app.use(
         if (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
           callback(null, true);
         } else {
-          // Check if origin matches production frontend URL from env
           const frontendUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL;
           if (frontendUrl && origin === frontendUrl.replace(/\/+$/, '')) {
             callback(null, true);
           } else {
-            // Reject other origins (don't throw error, just reject)
             console.warn(`⚠️  CORS blocked origin: ${origin}`);
             callback(null, false);
           }
@@ -112,9 +110,6 @@ mongoose
   })
   .catch((error) => {
     console.log(error, "Server Error:=>");
-
-    // Don't exit - let the app continue (some routes might work)
-    // process.exit(1);
   });
 
 // Routes
@@ -135,18 +130,15 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Database clearing endpoint (DEVELOPMENT ONLY - Admin protected)
+
 app.delete("/api/admin/clear-database", tokenMiddleware, protectAdmin, async (req, res) => {
   try {
-    // Only allow in development mode
     if (process.env.NODE_ENV === "production") {
       return res.status(403).json({
         success: false,
         message: "Database clearing is disabled in production mode",
       });
     }
-
-    // Check if database is connected
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({
         success: false,
@@ -155,8 +147,7 @@ app.delete("/api/admin/clear-database", tokenMiddleware, protectAdmin, async (re
     }
 
     const db = mongoose.connection.db;
-    
-    // Get all collection names
+  
     const collections = await db.listCollections().toArray();
     
     if (collections.length === 0) {
@@ -169,7 +160,6 @@ app.delete("/api/admin/clear-database", tokenMiddleware, protectAdmin, async (re
 
     const droppedCollections = [];
     
-    // Drop each collection
     for (const collection of collections) {
       try {
         await db.collection(collection.name).drop();
@@ -195,11 +185,7 @@ app.delete("/api/admin/clear-database", tokenMiddleware, protectAdmin, async (re
     });
   }
 });
-
-// API Routes (most routes use JSON body parser)
 app.use("/api", routes);
-
-// Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.status || 500).json({
@@ -208,28 +194,21 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
 app.use((req, res) => {
   res.status(404).json({
     message: "Route not found",
   });
 });
 
-// Create HTTP server
-const server = http.createServer(app);
 
-// Initialize Socket.io
+const server = http.createServer(app);
 const io = initializeSocket(server);
 if (io) {
   initializeSocketHandlers(io);
 }
 
-// Start server
 server.listen(PORT, async () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
 
-  // Log email configuration status and initialize
   const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
   const smtpPass =
     process.env.SMTP_PASS ||
@@ -244,9 +223,6 @@ server.listen(PORT, async () => {
         error.message
       );
     }
-
-    // Initialize Daily Processing Jobs
-    console.log(`📅 Initializing Daily Processing System...`);
     try {
       initializeDailyProcessing();
     } catch (error) {

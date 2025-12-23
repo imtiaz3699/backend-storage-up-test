@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { createUser, getAllUsers, getUserById, updateUser, deleteUser, searchCustomers, updateUserCharges, undoUserCharges, getUserInvoicesById, addDefaultInvoicesForUser, addDefaultInvoicesForAllUsers, getUserRentedUnits } from '../controllers/userController.js';
+import { createUser, getAllUsers, getUserById, updateUser, deleteUser, searchCustomers, updateUserCharges, undoUserCharges, undoLastCharges, getUserInvoicesById, addDefaultInvoicesForUser, addDefaultInvoicesForAllUsers, getUserRentedUnits, getReversalTransactions, billNextCharges } from '../controllers/userController.js';
 import { uploadUserDocuments } from '../middleware/uploadMiddleware.js';
 
 const router = express.Router();
@@ -40,6 +40,9 @@ router.post('/:id/invoices/default', addDefaultInvoicesForUser);  // Add default
 router.post('/invoices/default-all', addDefaultInvoicesForAllUsers);  // Add default invoices for all users (admin only)
 router.put('/:id/charges', updateUserCharges);  // Update user charges only (must be before /:id)
 router.delete('/:id/charges', undoUserCharges);  // Undo (clear) user charges (must be before /:id)
+router.post('/:id/charges/undo-last', undoLastCharges);  // Undo last charges from latest invoice (must be before /:id)
+router.post('/:id/bill-next-charges', billNextCharges);  // Bill next period charges (rent/deposit/move-in) (must be before /:id)
+router.get('/:id/transactions/reversals', getReversalTransactions);  // Get reversal transactions for user (must be before /:id)
 router.get('/:id', getUserById);        // Get user by ID
 router.put('/:id', uploadUserDocuments, handleUploadError, updateUser);         // Update user (with file upload support)
 router.delete('/:id', deleteUser);      // Delete user
