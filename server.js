@@ -13,6 +13,7 @@ import { initializeDailyProcessing } from "./jobs/index.js";
 import { handleStripeWebhook } from "./controllers/paymentController.js";
 import { initializeSocket } from "./utils/socketService.js";
 import { initializeSocketHandlers } from "./socket/socketHandler.js";
+import { tokenMiddleware, protectAdmin } from "./middleware/authMiddleware.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -136,6 +137,67 @@ app.get("/api/health", (req, res) => {
     database:
       mongoose.connection.readyState === 1 ? "connected" : "disconnected",
   });
+});
+
+// Database clearing endpoint (DEVELOPMENT ONLY - Admin protected)
+app.delete("/api/admin/clear-database", tokenMiddleware, protectAdmin, async (req, res) => {
+  try {
+    // Only allow in development mode
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({
+        success: false,
+        message: "Database clearing is disabled in production mode",
+      });
+    }
+
+    // Check if database is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: "Database is not connected",
+      });
+    }
+
+    const db = mongoose.connection.db;
+    
+    // Get all collection names
+    const collections = await db.listCollections().toArray();
+    
+    if (collections.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "Database is already empty",
+        collections_dropped: 0,
+      });
+    }
+
+    const droppedCollections = [];
+    
+    // Drop each collection
+    for (const collection of collections) {
+      try {
+        await db.collection(collection.name).drop();
+        droppedCollections.push(collection.name);
+        console.log(`✅ Dropped collection: ${collection.name}`);
+      } catch (error) {
+        console.error(`❌ Error dropping collection ${collection.name}:`, error.message);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Database cleared successfully. ${droppedCollections.length} collection(s) dropped.`,
+      collections_dropped: droppedCollections.length,
+      dropped_collections: droppedCollections,
+    });
+  } catch (error) {
+    console.error("❌ Error clearing database:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error clearing database",
+      error: error.message,
+    });
+  }
 });
 
 // API Routes (most routes use JSON body parser)

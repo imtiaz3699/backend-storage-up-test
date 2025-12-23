@@ -5,7 +5,6 @@ import Invoice from "../models/Invoice.js";
 import Unit from "../models/Unit.js";
 import { getFileUrl } from "../middleware/uploadMiddleware.js";
 import { calculateInvoiceStats } from "../utils/invoiceHelpers.js";
-import { getDefaultDummyUnits, createDefaultUnitsForUser } from "../utils/unitHelpers.js";
 import getStripe from "../config/stripe.js";
 import fs from "fs";
 import path from "path";
@@ -136,11 +135,6 @@ export const createUser = async (req, res) => {
     });
 
     await user.save();
-
-    // Create default units for the new user (async, don't wait)
-    createDefaultUnitsForUser(user).catch(error => {
-      console.error(`Failed to create default units for user ${user._id}:`, error);
-    });
 
     res.status(201).json({
       success: true,
@@ -497,20 +491,6 @@ export const getUserById = async (req, res) => {
     // Check if user has ANY actual rented units
     let hasActualRentedUnits = actualRentedUnitsCount > 0 || actualRentedUnitsInArray > 0;
 
-    // If user has no rented units, create default units in the database
-    if (!hasActualRentedUnits && (!user.rented_units || user.rented_units.length === 0)) {
-      try {
-        await createDefaultUnitsForUser(user);
-        // Reload user to get the newly created units
-        await user.populate('rented_units.unit_id');
-        // Recheck after creating default units
-        hasActualRentedUnits = user.rented_units && user.rented_units.length > 0;
-      } catch (error) {
-        console.error(`Error creating default units for user ${user._id}:`, error);
-        // Continue without throwing - will show dummy units as fallback
-      }
-    }
-
     // Fetch transactions related to this user (both move_out and actual move_out)
     let transactions = await Transaction.find({
       $or: [
@@ -588,39 +568,9 @@ export const getUserById = async (req, res) => {
       );
     }
 
-    // Only show dummy units if user has NO actual rented units
-    // Remove dummy units if user has at least one actual rented unit
+    // If user has no rented units, return empty array (no default units)
     if (!hasActualRentedUnits && (!userObject.rented_units || userObject.rented_units.length === 0)) {
-      const defaultUnits = getDefaultDummyUnits(user);
-      const now = new Date();
-      const oneMonthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-      const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-
-      // Convert dummy units to rented_units format (with unit_id reference)
-      userObject.rented_units = defaultUnits.map((unit, index) => ({
-        unit_id: {
-          _id: unit._id,
-          unit_number: unit.unit_number,
-          location: unit.location,
-          location_two: unit.location_two,
-          description: unit.description,
-          unit_details: unit.unit_details,
-          dimensions: unit.dimensions,
-          unit_is: unit.unit_is,
-          customer_email: unit.customer_email,
-          monthly_rate: unit.monthly_rate,
-          other_information: unit.other_information,
-          maintenance_comments: unit.maintenance_comments,
-          createdAt: unit.createdAt,
-          updatedAt: unit.updatedAt,
-          sample: true
-        },
-        billing_cycle: 'monthly',
-        deposit_amount: unit.monthly_rate * 2, // 2 months deposit
-        start_date: threeMonthsAgo,
-        end_date: index < 2 ? oneMonthFromNow : null, // First 2 units have end dates
-        sample: true
-      }));
+      userObject.rented_units = [];
     }
 
     res.status(200).json({
@@ -928,90 +878,7 @@ export const getUserRentedUnits = async (req, res) => {
       ru => ru.unit_id && !ru.unit_id.sample
     );
 
-    // If no rented units exist, check if we should create default units
-    if (allRentedUnits.length === 0) {
-      // Check if user has actual rented units from Unit collection
-      const userEmail = user.email?.toLowerCase().trim();
-      if (userEmail) {
-        const actualRentedUnitsCount = await Unit.countDocuments({
-          customer_email: userEmail,
-          unit_is: 'rented'
-        });
-
-        if (actualRentedUnitsCount === 0) {
-          try {
-            const fullUser = await User.findById(userId);
-            await createDefaultUnitsForUser(fullUser);
-            // Reload user to get the newly created units
-            const updatedUser = await User.findById(userId)
-              .select('rented_units email')
-              .populate('rented_units.unit_id');
-            const updatedAllRentedUnits = (updatedUser?.rented_units || []).filter(
-              ru => ru.unit_id && !ru.unit_id.sample
-            );
-            
-            // Apply pagination
-            const paginatedRentedUnits = updatedAllRentedUnits.slice(skip, skip + limit);
-            
-            // Calculate summary statistics from ALL units (not just paginated)
-            const totalUnits = updatedAllRentedUnits.length;
-            
-            // Calculate total monthly cost from all rented units
-            const monthlyCostTotal = updatedAllRentedUnits.reduce((sum, rentedUnit) => {
-              const monthlyRate = rentedUnit.monthly_rate || 
-                                 (rentedUnit.unit_id && rentedUnit.unit_id.monthly_rate) || 
-                                 0;
-              return sum + (typeof monthlyRate === 'number' ? monthlyRate : parseFloat(monthlyRate) || 0);
-            }, 0);
-            
-            const totalSpace = updatedAllRentedUnits.reduce((sum, rentedUnit) => {
-              const areaSize = rentedUnit.dimensions?.area_size || 
-                              (rentedUnit.unit_id && rentedUnit.unit_id.dimensions?.area_size);
-              if (areaSize) {
-                const match = String(areaSize).match(/(\d+\.?\d*)/);
-                if (match) {
-                  const value = parseFloat(match[1]);
-                  if (!isNaN(value)) {
-                    return sum + value;
-                  }
-                }
-              }
-              return sum;
-            }, 0);
-            
-            // Calculate pagination metadata
-            const totalPages = Math.ceil(totalUnits / limit);
-            const hasNextPage = page < totalPages;
-            const hasPrevPage = page > 1;
-            
-            return res.status(200).json({
-              success: true,
-              message: "User rented units retrieved successfully",
-              data: {
-                rented_units: paginatedRentedUnits,
-                total: totalUnits,
-                total_units: totalUnits,
-                monthly_cost_total: monthlyCostTotal,
-                total_space: parseFloat(totalSpace.toFixed(2)),
-                pagination: {
-                  currentPage: page,
-                  totalPages,
-                  totalItems: totalUnits,
-                  limit,
-                  hasNextPage,
-                  hasPrevPage,
-                  nextPage: hasNextPage ? page + 1 : null,
-                  prevPage: hasPrevPage ? page - 1 : null
-                }
-              }
-            });
-          } catch (error) {
-            console.error(`Error creating default units for user ${userId}:`, error);
-            // Continue to return empty array if creation fails
-          }
-        }
-      }
-    }
+    // If no rented units exist, return empty array (no default units created)
 
     // Apply pagination
     const paginatedRentedUnits = allRentedUnits.slice(skip, skip + limit);

@@ -1,6 +1,5 @@
 import User from '../models/User.js';
 import Unit from '../models/Unit.js';
-import { getDefaultDummyUnits, createDefaultUnitsForUser } from '../utils/unitHelpers.js';
 
 const buildPagination = (page, limit, total) => {
   const totalPages = Math.ceil(total / limit) || 1;
@@ -66,47 +65,14 @@ export const getUserDashboard = async (req, res) => {
     // Check if user has ANY actual rented units (either in Unit collection or in rented_units array)
     let hasActualRentedUnits = totalUnits > 0 || userRentedUnitsCount > 0;
 
-    // If user has no rented units, create default units in the database
-    if (!hasActualRentedUnits && totalUnits === 0 && (!userWithRentedUnits?.rented_units || userWithRentedUnits.rented_units.length === 0)) {
-      try {
-        const fullUser = await User.findById(user._id);
-        await createDefaultUnitsForUser(fullUser);
-        // Reload units after creating
-        const updatedTotal = await Unit.countDocuments({
-          customer_email: userEmail,
-          unit_is: 'rented'
-        });
-        hasActualRentedUnits = updatedTotal > 0;
-      } catch (error) {
-        console.error(`Error creating default units for user ${user._id}:`, error);
-        // Continue without throwing - will show dummy units as fallback
-      }
-    }
-
-    // Re-fetch units if default units were created
-    let allRentedUnits = await Unit.find({
+    // Get all rented units (no default units will be created)
+    const allRentedUnits = await Unit.find({
       customer_email: userEmail,
       unit_is: 'rented'
     }).sort({ createdAt: -1 });
 
-    // Re-fetch paginated units if default units were created
-    if (hasActualRentedUnits && allRentedUnits.length > 0) {
-      rentedUnits = await Unit.find({
-        customer_email: userEmail,
-        unit_is: 'rented'
-      })
-        .skip(skip)
-        .limit(limit)
-        .sort({ createdAt: -1 });
-    }
-
-    // Only show dummy units if user has NO actual rented units
-    let unitsToDisplay = rentedUnits;
-    if (!hasActualRentedUnits && allRentedUnits.length === 0) {
-      const defaultUnits = getDefaultDummyUnits(user);
-      unitsToDisplay = defaultUnits.slice(skip, skip + limit);
-      allRentedUnits = defaultUnits;
-    }
+    // Use the paginated units as display units
+    const unitsToDisplay = rentedUnits;
 
     const totalMonthlyCost = allRentedUnits.reduce((sum, unit) => {
       return sum + (unit.monthly_rate || 0);
