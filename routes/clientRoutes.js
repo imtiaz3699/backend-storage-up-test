@@ -34,10 +34,11 @@ const router = express.Router();
 router.get('/my-rentals', protect, getUserDashboard);
 router.get('/my-invoices', protect, getUserInvoices);
 router.post('/profile', protect, updateProfile);
-router.post('/payment-methods', protect, addPaymentMethod);
-router.get('/payment-methods', protect, getPaymentMethods);
-router.put('/payment-methods/:paymentMethodId/default', protect, setDefaultPaymentMethod);
-router.delete('/payment-methods/:paymentMethodId', protect, deletePaymentMethod);
+// Payment method routes (accessible to both clients and admins)
+router.post('/payment-methods', tokenMiddleware, addPaymentMethod);
+router.get('/payment-methods', tokenMiddleware, getPaymentMethods);
+router.put('/payment-methods/:paymentMethodId/default', tokenMiddleware, setDefaultPaymentMethod);
+router.delete('/payment-methods/:paymentMethodId', tokenMiddleware, deletePaymentMethod);
 
 // Invoice Payment routes (client side)
 router.post('/invoices/:invoiceId/payment/create-session', protect, createInvoiceCheckoutSession);
@@ -45,10 +46,10 @@ router.get('/invoices/:invoiceId/payment/link', protect, getInvoicePaymentLink);
 router.get('/invoices/:invoiceId/payment/status', protect, getInvoicePaymentStatus);
 router.get('/invoices/:invoiceId/payment/verify', verifyPaymentSuccess); // Public - called from success page with session_id
 
-// Client Payment Records routes
-router.get('/payments', protect, getMyPayments); // Get current user's payments
-router.get('/invoices/:invoiceId/payments', protect, getPaymentsByInvoiceId); // Get payments for a specific invoice (user's own invoices only)
-router.get('/payment-dashboard', protect, getPaymentDashboard); // Get payment dashboard data (current balance, autopay status, payment methods)
+// Payment Records routes (accessible to both clients and admins)
+router.get('/payments', tokenMiddleware, getMyPayments); // Get current user's payments
+router.get('/invoices/:invoiceId/payments', tokenMiddleware, getPaymentsByInvoiceId); // Get payments for a specific invoice (user's own invoices only)
+router.get('/payment-dashboard', tokenMiddleware, getPaymentDashboard); // Get payment dashboard data (current balance, autopay status, payment methods)
 
 // Client Transaction routes
 router.get('/transactions', protect, async (req, res) => {

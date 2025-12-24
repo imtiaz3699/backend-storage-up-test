@@ -1,6 +1,24 @@
 import NoticeSetup from '../models/NoticeSetup.js';
 import mongoose from 'mongoose';
 
+// Helper to auto-generate notice_plan_number in format NTCP__001, NTCP__002, ...
+const generateNextNoticePlanNumber = async () => {
+  const latest = await NoticeSetup.findOne(
+    { notice_plan_number: { $regex: /^NTCP__\d+$/ } },
+    { notice_plan_number: 1 }
+  ).sort({ notice_plan_number: -1 });
+
+  let nextNumber = 1;
+  if (latest?.notice_plan_number) {
+    const match = latest.notice_plan_number.match(/^NTCP__0*(\d+)$/);
+    if (match && match[1]) {
+      nextNumber = parseInt(match[1], 10) + 1;
+    }
+  }
+
+  return `NTCP__${String(nextNumber).padStart(3, '0')}`;
+};
+
 const buildPagination = (page, limit, total) => {
   const totalPages = Math.ceil(total / limit) || 1;
   const hasNextPage = page < totalPages;
@@ -20,6 +38,11 @@ const buildPagination = (page, limit, total) => {
 
 export const createNoticeSetup = async (req, res) => {
   try {
+    // Auto-generate notice_plan_number if not provided
+    if (!req.body.notice_plan_number) {
+      req.body.notice_plan_number = await generateNextNoticePlanNumber();
+    }
+
     const noticeSetup = await NoticeSetup.create(req.body);
 
     res.status(201).json({
@@ -114,6 +137,14 @@ export const updateNoticeSetup = async (req, res) => {
         success: false,
         message: 'Notice setup not found'
       });
+    }
+
+    // Prevent manual overwrite of notice_plan_number; if missing, backfill
+    if (req.body.notice_plan_number !== undefined) {
+      delete req.body.notice_plan_number;
+    }
+    if (!noticeSetup.notice_plan_number) {
+      noticeSetup.notice_plan_number = await generateNextNoticePlanNumber();
     }
 
     Object.assign(noticeSetup, req.body);
@@ -225,11 +256,17 @@ export const updateNoticeDesign = async (req, res) => {
       }
     };
 
+    // If notice_plan_number missing, backfill it
+    let noticePlanNumber = noticeSetup.notice_plan_number;
+    if (!noticePlanNumber) {
+      noticePlanNumber = await generateNextNoticePlanNumber();
+    }
+
     // Use native MongoDB collection to completely bypass Mongoose validation
     const collection = mongoose.connection.db.collection(NoticeSetup.collection.name);
     const updateResult = await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { notice_design: updatedNoticeDesign } }
+      { $set: { notice_design: updatedNoticeDesign, notice_plan_number: noticePlanNumber } }
     );
 
     if (updateResult.matchedCount === 0) {
@@ -343,7 +380,11 @@ export const createNoticeCharges = async (req, res) => {
       }
     }
 
+    const noticePlanNumber =
+      req.body.notice_plan_number || (await generateNextNoticePlanNumber());
+
     const doc = {
+      notice_plan_number: noticePlanNumber,
       notice_charges: req.body.notice_charges,
       createdAt: new Date(),
       updatedAt: new Date()
@@ -430,7 +471,11 @@ export const createNoticeDesignOnly = async (req, res) => {
 
     // Insert using native collection to bypass other required fields
     const collection = mongoose.connection.db.collection(NoticeSetup.collection.name);
+    const noticePlanNumber =
+      req.body.notice_plan_number || (await generateNextNoticePlanNumber());
+
     const doc = {
+      notice_plan_number: noticePlanNumber,
       notice_design: noticeDesign,
       // keep other fields empty/default
       notice_charges: {},
@@ -582,10 +627,16 @@ export const updateNoticeCharges = async (req, res) => {
       }
     };
 
+    // If notice_plan_number missing, backfill it
+    let noticePlanNumber = noticeSetup.notice_plan_number;
+    if (!noticePlanNumber) {
+      noticePlanNumber = await generateNextNoticePlanNumber();
+    }
+
     const collection = mongoose.connection.db.collection(NoticeSetup.collection.name);
     const updateResult = await collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { notice_charges: updatedNoticeCharges } }
+      { $set: { notice_charges: updatedNoticeCharges, notice_plan_number: noticePlanNumber } }
     );
 
     if (updateResult.matchedCount === 0) {

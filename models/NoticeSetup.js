@@ -164,9 +164,12 @@ const noticeChargesSchema = new mongoose.Schema({
 }, { _id: false });
 
 const noticeSetupSchema = new mongoose.Schema({
+  // Auto-generated like NTCP__001
   notice_plan_number: {
-    type: Number,
-    required: [true, 'Notice plan number is required']
+    type: String,
+    required: [true, 'Notice plan number is required'],
+    unique: true,
+    trim: true
   },
   name_of_this_notice: {
     type: String,

@@ -6,10 +6,14 @@ import { sendEmail } from "../utils/emailService.js";
 
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
 
+// Token expiration: 7 days (in milliseconds for cookies, "7d" for JWT)
+const TOKEN_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+const TOKEN_EXPIRATION_STRING = process.env.JWT_EXPIRE || "7d"; // 7 days for JWT
+
 // Generate JWT Token
 const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || "7d",
+    expiresIn: TOKEN_EXPIRATION_STRING,
   });
 };
 
@@ -70,9 +74,18 @@ export const signup = async (req, res) => {
     // Generate token
     const token = generateToken(user._id);
 
-    // Set token in cookie
+    // Clear adminToken cookie to prevent conflicts (user should only have one active session)
+    const cookieOptions = {
+      expires: new Date(0),
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    };
+    res.cookie("adminToken", "", cookieOptions);
+
+    // Set token in cookie (expires in 7 days)
     res.cookie("token", token, {
-      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expires: new Date(Date.now() + TOKEN_EXPIRATION_MS),
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
@@ -144,9 +157,19 @@ export const login = async (req, res) => {
     }
     // Generate token
     const token = generateToken(user?._id);
-    // Set token in cookie
+    
+    // Clear adminToken cookie to prevent conflicts (user should only have one active session)
+    const cookieOptions = {
+      expires: new Date(0),
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    };
+    res.cookie("adminToken", "", cookieOptions);
+    
+    // Set token in cookie (expires in 7 days)
     res.cookie("token", token, {
-      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expires: new Date(Date.now() + TOKEN_EXPIRATION_MS),
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
@@ -338,9 +361,9 @@ export const refreshToken = async (req, res) => {
     // Determine cookie name based on token source
     const cookieName = source === 'adminCookie' ? 'adminToken' : 'token';
     
-    // Set new token in cookie
+    // Set new token in cookie (expires in 7 days)
     res.cookie(cookieName, newToken, {
-      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expires: new Date(Date.now() + TOKEN_EXPIRATION_MS),
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
@@ -793,9 +816,18 @@ export const adminLogin = async (req, res) => {
     // Generate token
     const token = generateToken(user._id);
 
-    // Set token in cookie
+    // Clear regular token cookie to prevent conflicts (user should only have one active session)
+    const cookieOptions = {
+      expires: new Date(0),
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    };
+    res.cookie("token", "", cookieOptions);
+
+    // Set adminToken in cookie (expires in 7 days)
     res.cookie("adminToken", token, {
-      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expires: new Date(Date.now() + TOKEN_EXPIRATION_MS),
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
@@ -858,9 +890,18 @@ export const adminSignup = async (req, res) => {
     // Generate token
     const token = generateToken(user._id);
 
-    // Set token in cookie
+    // Clear regular token cookie to prevent conflicts (user should only have one active session)
+    const cookieOptions = {
+      expires: new Date(0),
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    };
+    res.cookie("token", "", cookieOptions);
+
+    // Set adminToken in cookie (expires in 7 days)
     res.cookie("adminToken", token, {
-      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expires: new Date(Date.now() + TOKEN_EXPIRATION_MS),
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",

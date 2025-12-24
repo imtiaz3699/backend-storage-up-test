@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import Transaction from "../models/Transaction.js";
 import Invoice from "../models/Invoice.js";
 import Unit from "../models/Unit.js";
+import PaymentMethod from "../models/PaymentMethod.js";
 import { getFileUrl } from "../middleware/uploadMiddleware.js";
 import { calculateInvoiceStats } from "../utils/invoiceHelpers.js";
 import getStripe from "../config/stripe.js";
@@ -248,12 +249,13 @@ export const createUserWithUnit = async (req, res) => {
     const additionalRecordsFile = files.additional_records && files.additional_records[0] ? getFileUrl(files.additional_records[0].filename) : "";
 
     // Create new user with all fields
+    // Force role to be "user" only (ignore any roles passed in request)
     const user = new User({
       name,
       email,
       phoneNumber,
       password,
-      roles: roles || ["user"],
+      roles: ["user"], // Always create as regular user, never admin/moderator
       secondaryContactName: secondaryContactName || "",
       secondaryPhoneNumber: secondaryPhoneNumber || "",
       secondaryEmail: secondaryEmail || "",
@@ -613,39 +615,30 @@ export const getUserById = async (req, res) => {
       // Don't fail the entire request if invoice fetch fails
     }
 
+    // Get payment methods for this user
+    let paymentMethods = [];
+    try {
+      paymentMethods = await PaymentMethod.find({
+        user: user._id,
+        is_active: true
+      })
+        .select('card_brand card_last4 card_exp_month card_exp_year card_holder_name is_default stripe_payment_method_id stripe_customer_id createdAt updatedAt')
+        .sort({ is_default: -1, createdAt: -1 })
+        .lean(); // Use lean() to get plain JavaScript objects
+      console.log(`Found ${paymentMethods.length} payment methods for user ${userId}`);
+    } catch (error) {
+      console.error(`Error fetching payment methods for user ${userId}:`, error.message);
+      // Don't fail the entire request if payment methods fetch fails
+    }
+
     const userObject = user.toJSON();
     userObject.transactions = transactions || [];
     userObject.invoices = latestPendingInvoice ? [latestPendingInvoice] : []; // Add invoices key with latest pending invoice
+    userObject.payment_methods = Array.isArray(paymentMethods) ? paymentMethods : []; // Add payment methods key - ensure it's always an array
 
     // Ensure subscriptions is at least an empty array
     if (!Array.isArray(userObject.subscriptions)) {
       userObject.subscriptions = [];
-    }
-
-    // If no subscriptions exist, add sample (non-persisted) subscriptions for frontend integration
-    if (!userObject.subscriptions || userObject.subscriptions.length === 0) {
-      userObject.subscriptions = [
-        {
-          _id: '64f1f77bcf86cd7994391001',
-          type: '6 × 8 - 2.8 DH',
-          quantity: 2,
-          status: 'active',
-          frequency: 'monthly',
-          next_invoice_date: '2025-10-01T00:00:00.000Z',
-          next_invoice_amount: 33000,
-          sample: true
-        },
-        {
-          _id: '64f1f77bcf86cd7994391002',
-          type: '6 × 8 - 2.8 DH',
-          quantity: 1,
-          status: 'cancelled',
-          frequency: 'monthly',
-          next_invoice_date: null,
-          next_invoice_amount: 0,
-          sample: true
-        }
-      ];
     }
 
     // Filter out any dummy/sample units if user has actual rented units
@@ -2772,6 +2765,56 @@ export const addDefaultInvoicesForAllUsers = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error creating default invoices for all users",
+      error: error.message,
+    });
+  }
+};
+
+// Clear all subscriptions from all users
+export const clearAllUserSubscriptions = async (req, res) => {
+  try {
+    const currentUser = req.user;
+    const userRoles = currentUser?.roles || [];
+    const isAdmin = userRoles.includes('admin') || userRoles.includes('moderator');
+
+    // Only admins can clear subscriptions
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Administrator privileges are required.",
+        code: "AUTH_FORBIDDEN"
+      });
+    }
+
+    // Get all users
+    const users = await User.find({});
+    
+    let totalUsersProcessed = 0;
+    let totalSubscriptionsCleared = 0;
+
+    for (const user of users) {
+      if (user.subscriptions && Array.isArray(user.subscriptions) && user.subscriptions.length > 0) {
+        const subscriptionCount = user.subscriptions.length;
+        user.subscriptions = [];
+        await user.save();
+        totalUsersProcessed++;
+        totalSubscriptionsCleared += subscriptionCount;
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Cleared all subscriptions from ${totalUsersProcessed} users. Total ${totalSubscriptionsCleared} subscriptions removed.`,
+      data: {
+        totalUsersProcessed,
+        totalSubscriptionsCleared,
+        totalUsersChecked: users.length
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error clearing user subscriptions",
       error: error.message,
     });
   }

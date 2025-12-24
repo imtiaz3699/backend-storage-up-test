@@ -37,14 +37,25 @@ export const tokenMiddleware = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded?.userId);
+    
+    if (!decoded || !decoded.userId) {
+      return handleTokenError(res, 401, 'Invalid token format. Please log in again.', 'AUTH_TOKEN_INVALID');
+    }
+
+    const user = await User.findById(decoded.userId);
 
     if (!user) {
       return handleTokenError(res, 401, 'Account no longer exists. Please contact support.', 'AUTH_ACCOUNT_NOT_FOUND');
     }
 
+    // Ensure user has roles array
+    if (!user.roles || !Array.isArray(user.roles) || user.roles.length === 0) {
+      console.error(`User ${user._id} (${user.email}) has no roles assigned`);
+      return handleTokenError(res, 403, 'User account is missing required role information. Please contact support.', 'AUTH_MISSING_ROLES');
+    }
+
     req.user = user;
-    req.userId = user?._id;
+    req.userId = user._id;
     req.tokenSource = source;
 
     next();
@@ -57,6 +68,7 @@ export const tokenMiddleware = async (req, res, next) => {
       return handleTokenError(res, 401, 'Your session has expired. Please log in again.', 'AUTH_TOKEN_EXPIRED');
     }
 
+    console.error('Token verification error:', error);
     return handleTokenError(res, 500, 'Unable to verify authentication token.', 'AUTH_TOKEN_VERIFICATION_FAILED');
   }
 };
@@ -82,10 +94,27 @@ export const protect = (req, res, next) => {
 // Protect admin routes - Require admin/moderator role
 export const protectAdmin = (req, res, next) => {
   tokenMiddleware(req, res, () => {
+    // Ensure user exists and has roles
+    if (!req.user) {
+      return handleTokenError(
+        res,
+        401,
+        'User not found in session. Please log in again.',
+        'AUTH_USER_NOT_FOUND'
+      );
+    }
+
     const roles = req?.user?.roles || [];
+    
+    // Log for debugging if roles are missing
+    if (!roles || roles.length === 0) {
+      console.error(`Admin access denied: User ${req.user._id} (${req.user.email}) has no roles`);
+    }
+
     const hasAdminAccess = roles.includes('admin') || roles.includes('moderator');
 
     if (!hasAdminAccess) {
+      console.error(`Admin access denied: User ${req.user._id} (${req.user.email}) has roles: [${roles.join(', ')}]`);
       return handleTokenError(
         res,
         403,
